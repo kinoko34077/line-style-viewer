@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>LINE Dark Theme Chat Preview</title>
+<style>
+  /* 全体背景をLINEダークっぽく */
+  body, html {
+    margin: 0;
+    padding: 0;
+    background-color: #111; /* 真っ黒寄り */
+    color: #fff;
+    font-family: sans-serif;
+  }
+
+  .line-talk {
+    max-width: 600px; /* 必要に応じて調整 */
+    margin: 0 auto;
+    padding: 16px;
+    background-color: #111;
+  }
+
+  .bubble {
+    display: inline-block;
+    margin: 8px 0;
+    padding: 10px 14px;
+    max-width: 75%;
+    border-radius: 14px;
+    white-space: pre-wrap; /* 改行対応 */
+    position: relative;
+    font-size: 15px;
+    line-height: 1.5;
+    clear: both;
+  }
+
+  /* 自分のメッセージ（右寄せ、緑色） */
+  .self {
+    float: right;
+    background-color: #00c300; /* LINEっぽい緑 */
+    color: #fff;
+    text-align: left;
+  }
+
+  /* 相手のメッセージ（左寄せ、濃いグレー） */
+  .other {
+    float: left;
+    background-color: #333;
+    color: #fff;
+    text-align: left;
+  }
+
+  /* 電話用の吹き出し */
+  .tel {
+    background: #444;
+    border: 1px solid #555;
+    text-align: center;
+    margin: 12px auto;
+    max-width: 80%;
+    font-weight: bold;
+    position: relative;
+    display: block;
+    clear: both;
+  }
+
+  /* 吹き出しの下に時刻や既読を小さく表示 */
+  .post-info {
+    display: block;
+    font-size: 0.75em;
+    color: #d0d0d0;
+    margin-top: 4px;
+  }
+
+  /* システムメッセージ (日付など) は中央寄せ */
+  .system {
+    text-align: center;
+    font-size: 0.8em;
+    color: #aaa;
+    margin: 16px 0;
+    white-space: pre-wrap;
+    clear: both;
+  }
+
+  /* 既読を緑っぽくするなら下記を変更可能 */
+  /* .post-info .read {
+    color: #9af999;
+  } */
+
+  .clearfix::after {
+    content: \"\";
+    display: block;
+    clear: both;
+  }
+</style>
+</head>
+<body>
+<div class=\"line-talk\" id=\"line-talk\"></div>
+
+<script>
+/*
+  ▼サンプルのチャットテキスト
+    @I <<やあ、今日どうだった？
+    結構ばたばたしてたわ>> (15:35 既読)
+    <<TEL:不在着信>> (19:00)
+    @U <<そうなんだ！
+    お疲れさま〜>> (20:01)
+    <<<2025年3月22日>>>
+    @I <<ごめん俺今日出かけてるから厳しい>> (20:41 既読)
+*/
+
+const rawText = `@I <<やあ、今日どうだった？
+結構ばたばたしてたわ>> (15:35 既読)
+<<TEL:不在着信>> (19:00)
+@U <<そうなんだ！
+お疲れさま〜>> (20:01)
+<<<2025年3月22日>>>
+@I <<ごめん俺今日出かけてるから厳しい>> (20:41 既読)
+`;
+
+////////////////////////////////////////////////////////////////////////////////
+// マルチライン対応パーサ
+////////////////////////////////////////////////////////////////////////////////
+
+function parseChat(text) {
+  const tokens = [];
+  let i = 0;
+  const lines = text.split(/\\r?\\n/);
+
+  while (i < lines.length) {
+    let line = lines[i].trim();
+
+    // バックスラッシュで始まる行はスキップ（エスケープ機能）
+    if (/^\\\\/.test(line)) {
+      i++;
+      continue;
+    }
+
+    let match;
+
+    // ---- 自分・相手の吹き出し (マルチライン) ----
+    // 例) @I << ... >> (時刻 既読)
+    if ((match = line.match(/^(@I|@U)\\s*<<([^]*)$/))) {
+      let sender = match[1];
+      let rest = line.replace(/^(@I|@U)\\s*<</, \"\");
+      let contentLines = [rest];
+      let postInfo = \"\";
+      i++;
+      let found = false;
+
+      // >> までを取得
+      while (i < lines.length) {
+        const nextLine = lines[i];
+        let closingMatch = nextLine.match(/^(.*?)>>(?:\\s*\\((.*?)\\))?$/);
+        if (closingMatch) {
+          // (1)は最後の本文 (2)は後ろの投稿情報
+          contentLines.push(closingMatch[1]);
+          if (closingMatch[2]) {
+            postInfo = closingMatch[2];
+          }
+          found = true;
+          i++;
+          break;
+        } else {
+          contentLines.push(nextLine);
+          i++;
+        }
+      }
+      let content = contentLines.join(\"\\n\").trim();
+      tokens.push({
+        type: sender === \"@I\" ? \"self\" : \"other\",
+        content,
+        postInfo,
+      });
+    }
+    // ---- 自分・相手の吹き出し (1行) ----
+    else if (
+      (match = line.match(
+        /^(@I|@U)\\s*<<([^>]+)>>\\s*(?:\\((.*?)\\))?$/
+      ))
+    ) {
+      const sender = match[1];
+      const content = match[2].trim();
+      const postInfo = match[3] || \"\";
+      tokens.push({
+        type: sender === \"@I\" ? \"self\" : \"other\",
+        content,
+        postInfo,
+      });
+      i++;
+    }
+    // ---- TEL (マルチライン) ----
+    else if ((match = line.match(/^<<TEL:([^]*)$/))) {
+      let rest = line.replace(/^<<TEL:/, \"\");
+      let contentLines = [rest];
+      let postInfo = \"\";
+      i++;
+      let found = false;
+
+      while (i < lines.length) {
+        const nextLine = lines[i];
+        let closingMatch = nextLine.match(/^(.*?)>>(?:\\s*\\((.*?)\\))?$/);
+        if (closingMatch) {
+          contentLines.push(closingMatch[1]);
+          if (closingMatch[2]) {
+            postInfo = closingMatch[2];
+          }
+          found = true;
+          i++;
+          break;
+        } else {
+          contentLines.push(nextLine);
+          i++;
+        }
+      }
+      let content = contentLines.join(\"\\n\").trim();
+      tokens.push({ type: \"tel\", content, postInfo });
+    }
+    // ---- TEL (1行) ----
+    else if ((match = line.match(/^<<TEL:([^>]+)>>\\s*(?:\\((.*?)\\))?$/))) {
+      const content = match[1].trim();
+      const postInfo = match[2] || \"\";
+      tokens.push({ type: \"tel\", content, postInfo });
+      i++;
+    }
+    // ---- システムメッセージ (マルチライン) ----
+    else if ((match = line.match(/^<<<([^]*)$/))) {
+      let rest = line.replace(/^<<</, \"\");
+      let postInfo = \"\";
+      i++;
+      while (i < lines.length) {
+        const nextLine = lines[i];
+        let closingMatch = nextLine.match(/^(.*?)>>>\\s*(?:\\((.*?)\\))?$/);
+        if (closingMatch) {
+          rest += \"\\n\" + closingMatch[1];
+          if (closingMatch[2]) {
+            postInfo = closingMatch[2];
+          }
+          i++;
+          break;
+        } else {
+          rest += \"\\n\" + nextLine;
+          i++;
+        }
+      }
+      tokens.push({ type: \"system\", content: rest.trim(), postInfo });
+    }
+    // ---- システムメッセージ (1行) ----
+    else if (
+      (match = line.match(
+        /^<<<([^>]+)>>>\\s*(?:\\((.*?)\\))?$/
+      ))
+    ) {
+      const content = match[1].trim();
+      const postInfo = match[2] || \"\";
+      tokens.push({ type: \"system\", content, postInfo });
+      i++;
+    } else {
+      // 該当しない行はスキップ
+      i++;
+    }
+  }
+
+  return tokens;
+}
+
+function renderLineTalk(text) {
+  const tokens = parseChat(text);
+  let html = \"\";
+  tokens.forEach((t) => {
+    if (t.type === \"self\" || t.type === \"other\") {
+      html += `<div class=\"bubble ${t.type} clearfix\">${t.content}`;
+      if (t.postInfo) {
+        html += `<div class=\"post-info\">${t.postInfo}</div>`;
+      }
+      html += `</div>`;
+    } else if (t.type === \"tel\") {
+      html += `<div class=\"bubble tel clearfix\">${t.content}`;
+      if (t.postInfo) {
+        html += `<div class=\"post-info\">${t.postInfo}</div>`;
+      }
+      html += `</div>`;
+    } else if (t.type === \"system\") {
+      html += `<div class=\"system\">${t.content}`;
+      if (t.postInfo) {
+        html += `\\n<span class='post-info'>${t.postInfo}</span>`;
+      }
+      html += `</div>`;
+    }
+  });
+  return html;
+}
+
+// 実行
+document.getElementById(\"line-talk\").innerHTML = renderLineTalk(rawText);
+</script>
+</body>
+</html>

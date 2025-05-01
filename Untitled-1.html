@@ -1,0 +1,250 @@
+<!-- シンプルな Obsidian 対応 HTMLサンプル: 複数行チャット・吹き出し右横に情報表示 -->
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+.line-talk {
+  font-family: sans-serif;
+  background: #e5edf0;
+  padding: 10px;
+  border-radius: 8px;
+  line-height: 1.5;
+  position: relative;
+}
+.bubble {
+  margin: 8px 0;
+  padding: 10px 14px;
+  max-width: 75%;
+  border-radius: 14px;
+  clear: both;
+  display: inline-block;
+  white-space: pre-wrap; /* 改行対応 */
+}
+.self {
+  background: #dcf8c6;
+  float: right;
+  text-align: left;
+}
+.other {
+  background: #fff;
+  float: left;
+  text-align: left;
+}
+.bubble .post-info {
+  color: #666;
+  font-size: 0.75em;
+  margin-left: 6px;
+}
+.tel {
+  background: #d0e7ff;
+  border: 1px solid #a3c8f0;
+  text-align: center;
+  padding: 20px 14px;
+  border-radius: 16px;
+  margin: 12px auto;
+  max-width: 85%;
+  font-weight: bold;
+  position: relative;
+  white-space: pre-wrap;
+}
+.tel::before {
+  content: "\260E\FE0F";
+  display: block;
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+.system {
+  text-align: center;
+  font-size: 0.8em;
+  color: #666;
+  margin: 10px 0;
+  white-space: pre-wrap;
+}
+.clearfix::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+</style>
+</head>
+<body>
+<div class="line-talk" id="line-talk"></div>
+
+<script>
+// サンプル入力（複数行に対応したい）
+//   @I <<今日はどうだった？\n結構疲れたけど、充実してたよ>> (11:32 既読)
+//   @U <<そっか\n私はまあまあかなー>> (11:34)
+//   <<<2025年3月22日>>>
+//   <<TEL:不在着信\n(着信時間12:01)>> (既読なし)
+//   @I <<また後でかけ直すね>>
+
+const rawText = `@I <<今日はどうだった？
+結構疲れたけど、充実してたよ>> (11:32 既読)
+@U <<そっか
+私はまあまあかなー>> (11:34)
+<<<2025年3月22日>>>
+<<TEL:不在着信
+(着信時間12:01)>> (既読なし)
+@I <<また後でかけ直すね>>`;
+
+// 改行を含む <<...>> を扱うため、一行ずつではなく手動でパース
+
+function parseChat(text) {
+  const tokens = [];
+  let i = 0;
+  const lines = text.split(/\r?\n/);
+
+  while (i < lines.length) {
+    let line = lines[i];
+
+    // バックスラッシュで始まる行はスキップ
+    if (/^\\/.test(line)) {
+      i++;
+      continue;
+    }
+
+    // パターン判定
+    let match;
+    if ((match = line.match(/^(@I|@U)\s*<<([^]*)$/))) {
+      // 例: @I <<...
+      //   以降 >> が出るまでをまとめる
+      let sender = match[1];
+      let rest = line.replace(/^(@I|@U)\s*<</, "");
+      let contentLines = [rest];
+      let postInfo = "";
+      i++;
+      let found = false;
+
+      while (i < lines.length) {
+        // 進めた先
+        const nextLine = lines[i];
+        // >> で終了 + 後ろに(〜)がある可能性
+        let closingMatch = nextLine.match(/^(.*?)>>(?:\s*\((.*?)\))?$/);
+        if (closingMatch) {
+          // (1) は最後の本文 (2) は後ろの投稿情報
+          contentLines.push(closingMatch[1]);
+          if (closingMatch[2]) {
+            postInfo = closingMatch[2];
+          }
+          found = true;
+          i++;
+          break;
+        } else {
+          contentLines.push(nextLine);
+          i++;
+        }
+      }
+      let content = contentLines.join("\n");
+      tokens.push({ type: sender === "@I" ? "self" : "other", content, postInfo });
+    }
+    else if ((match = line.match(/^(@I|@U)\s*<<([^>]+)>>\s*(?:\((.*?)\))?$/))) {
+      // 1行内で閉じるパターン
+      const sender = match[1];
+      const content = match[2];
+      const postInfo = match[3] || "";
+      tokens.push({ type: sender === "@I" ? "self" : "other", content, postInfo });
+      i++;
+    }
+    else if ((match = line.match(/^<<TEL:([^]*)$/))) {
+      // <<TEL:...
+      let rest = line.replace(/^<<TEL:/, "");
+      let contentLines = [rest];
+      let postInfo = "";
+      i++;
+      let found = false;
+
+      while (i < lines.length) {
+        const nextLine = lines[i];
+        let closingMatch = nextLine.match(/^(.*?)>>(?:\s*\((.*?)\))?$/);
+        if (closingMatch) {
+          contentLines.push(closingMatch[1]);
+          if (closingMatch[2]) {
+            postInfo = closingMatch[2];
+          }
+          found = true;
+          i++;
+          break;
+        } else {
+          contentLines.push(nextLine);
+          i++;
+        }
+      }
+      let content = contentLines.join("\n");
+      tokens.push({ type: "tel", content, postInfo });
+    }
+    else if ((match = line.match(/^<<TEL:([^>]+)>>\s*(?:\((.*?)\))?$/))) {
+      // 1行で閉じるTEL
+      const content = match[1];
+      const postInfo = match[2] || "";
+      tokens.push({ type: "tel", content, postInfo });
+      i++;
+    }
+    else if ((match = line.match(/^<<<([^]*)$/))) {
+      // <<<...
+      let rest = line.replace(/^<<</, "");
+      let postInfo = "";
+      i++;
+      while (i < lines.length) {
+        const nextLine = lines[i];
+        let closingMatch = nextLine.match(/^(.*?)>>>\s*(?:\((.*?)\))?$/);
+        if (closingMatch) {
+          rest += "\n" + closingMatch[1];
+          if (closingMatch[2]) {
+            postInfo = closingMatch[2];
+          }
+          i++;
+          break;
+        } else {
+          rest += "\n" + nextLine;
+          i++;
+        }
+      }
+      tokens.push({ type: "system", content: rest, postInfo });
+    }
+    else if ((match = line.match(/^<<<([^>]+)>>>(?:\s*\((.*?)\))?$/))) {
+      // 1行で閉じるシステム
+      const content = match[1];
+      const postInfo = match[2] || "";
+      tokens.push({ type: "system", content, postInfo });
+      i++;
+    } else {
+      // 特に該当がなければスキップ or そのまま?
+      i++;
+    }
+  }
+
+  return tokens;
+}
+
+function renderLineTalk(text) {
+  const tokens = parseChat(text);
+  let html = "";
+  tokens.forEach(t => {
+    if (t.type === "self" || t.type === "other") {
+      html += `<div class="bubble ${t.type} clearfix">${t.content}`;
+      if (t.postInfo) {
+        html += ` <span class='post-info'>${t.postInfo}</span>`;
+      }
+      html += `</div>`;
+    } else if (t.type === "tel") {
+      html += `<div class="tel clearfix">${t.content}`;
+      if (t.postInfo) {
+        html += `\n<span class='post-info'>${t.postInfo}</span>`;
+      }
+      html += `</div>`;
+    } else if (t.type === "system") {
+      html += `<div class="system">${t.content}`;
+      if (t.postInfo) {
+        html += `\n<span class='post-info'>${t.postInfo}</span>`;
+      }
+      html += `</div>`;
+    }
+  });
+  return html;
+}
+
+// 実行
+document.getElementById("line-talk").innerHTML = renderLineTalk(rawText);
+</script>
+</body>
+</html>
