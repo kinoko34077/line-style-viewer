@@ -1,0 +1,55 @@
+body {
+    font-family: "Helvetica", sans-serif;
+    background: #222;
+    color: #fff;
+    padding: 20px;
+  }
+  
+  #chatContainer {
+    max-width: 600px;
+    margin: auto;
+    background: #111;
+    border-radius: 10px;
+    padding: 10px;
+  }
+  
+  .talk {
+    display: flex;
+    margin: 10px 0;
+    align-items: flex-end;
+  }
+  
+  .talk.you {
+    flex-direction: row;
+  }
+  
+  .talk.me {
+    flex-direction: row-reverse;
+  }
+  
+  .icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    margin: 0 8px;
+  }
+  
+  .balloon {
+    background: #444;
+    padding: 8px 12px;
+    border-radius: 16px;
+    max-width: 70%;
+    position: relative;
+    word-break: break-word;
+  }
+  
+  .talk.me .balloon {
+    background: #0f8;
+  }
+  .date-label, .system {
+    text-align: center;
+    color: #aaa;
+    margin: 10px 0;
+    font-size: 0.9em;
+  }
+  

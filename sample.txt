@@ -1,0 +1,12 @@
+# user: kino
+# icon: kino=./default/default-icon.png
+# icon: taro=./default/default-icon.png
+
+2023/08/18(金)
+22:10	kino	とりあえずテスト
+22:30	kino	[写真]
+22:31	taro	[photo.jpg]
+22:35	taro	[スタンプ]
+22:36	kino	[stk_2345.svg]
+22:40	taro	了解！
+22:50		○○がメッセージを取り消しました
