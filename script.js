@@ -7,6 +7,15 @@ document.getElementById('fileInput').addEventListener('change', async (event) =>
   renderChat(parseText(merged));
 });
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function parseMultiline(text) {
   // 改行コードをLFに統一
   text = text.replace(/\r\n|\r/g, '\n');
@@ -74,35 +83,38 @@ function renderChat({ meta, items }) {
   container.innerHTML = '';
   for (const item of items) {
     if (item.type === 'date') {
-      container.innerHTML += `<div class="date-label">${item.content}</div>`;
+      container.innerHTML += `<div class="date-label">${escapeHtml(item.content)}</div>`;
     } else if (item.type === 'system') {
-      container.innerHTML += `<div class="system">${item.content}</div>`;
+      container.innerHTML += `<div class="system">${escapeHtml(item.content)}</div>`;
     } else {
       const isSelf = item.name === meta.user;
       const icon = meta.icons[item.name] || meta.icons['default'] || './default/default-icon.png';
+      const safeIcon = escapeHtml(icon);
+      const safeTime = escapeHtml(item.time);
       let contentHTML = '';
 
       if (/^\[.*\.(jpg|png|svg|mp4|webm)\]$/.test(item.content)) {
         const filename = item.content.replace(/[\[\]]/g, '');
+        const safeFilename = escapeHtml(filename);
         if (/\.(jpg|png|svg)$/.test(filename)) {
-          contentHTML = `<img src="${filename}" onerror="this.src='./default/default-photo.png'">`;
+          contentHTML = `<img src="${safeFilename}" onerror="this.src='./default/default-photo.png'">`;
         } else if (/\.(mp4|webm)$/.test(filename)) {
-          contentHTML = `<video src="${filename}" controls></video>`;
+          contentHTML = `<video src="${safeFilename}" controls></video>`;
         }
       } else if (item.content === '[写真]') {
         contentHTML = `<img src="./default/default-photo.png">`;
       } else if (item.content === '[スタンプ]') {
         contentHTML = `<img src="./default/default-stamp.png">`;
       } else {
-        contentHTML = item.content.replace(/^"|"$/g, '').replace(/\n/g, '<br>');
+        contentHTML = escapeHtml(item.content.replace(/^"|"$/g, '')).replace(/\n/g, '<br>');
       }
 
       container.innerHTML += `
         <div class="talk ${isSelf ? 'me' : 'you'}">
-          <img class="icon" src="${icon}" />
+          <img class="icon" src="${safeIcon}" />
           <div class="message-block-with-meta">
             <div class="balloon">${contentHTML}</div>
-            <div class="meta-inline">${item.time}${isSelf ? '　既読' : ''}</div>
+            <div class="meta-inline">${safeTime}${isSelf ? '　既読' : ''}</div>
           </div>
         </div>
       `;
