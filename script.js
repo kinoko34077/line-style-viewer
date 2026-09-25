@@ -17,37 +17,43 @@ function escapeHtml(value) {
 }
 
 function parseMultiline(text) {
-  // 改行コードをLFに統一
   text = text.replace(/\r\n|\r/g, '\n');
 
   const lines = text.split('\n');
   const result = [];
   let buffer = null;
 
-  for (let line of lines) {
+  for (const line of lines) {
     const trimmed = line.trim();
 
-    // 多行メッセージの開始検出
     if (buffer !== null) {
       buffer += '\n' + line;
-      if (/[^\\]"$/.test(trimmed) || /^"$/.test(trimmed)) {
+      if (/(^|[^\\])"$/.test(trimmed)) {
         result.push(buffer);
         buffer = null;
       }
-    } else if (/^"([^"]*)?$/.test(trimmed)) {
+      continue;
+    }
+
+    const fields = line.split('\t');
+    const messageField = fields.length >= 3 ? fields.slice(2).join('\t').trim() : trimmed;
+    const startsQuotedMessage = messageField.startsWith('"');
+    const closesOnSameLine = /(^|[^\\])"$/.test(messageField);
+
+    if (startsQuotedMessage && !closesOnSameLine) {
       buffer = line;
     } else {
       result.push(line);
     }
   }
 
-  if (buffer !== null) result.push(buffer); // 残りがあれば追加
+  if (buffer !== null) result.push(buffer);
 
-  return result.join('\n');
+  return result;
 }
 
 function parseText(text) {
-  const lines = text.split(/\r?\n/);
+  const lines = Array.isArray(text) ? text : String(text).split(/\r?\n/);
   const meta = { user: null, icons: {} };
   const items = [];
 
@@ -55,9 +61,15 @@ function parseText(text) {
     if (line.startsWith('# user:')) {
       meta.user = line.split(':')[1].trim();
     } else if (line.startsWith('# icon:')) {
-      const [name, url] = line.slice(7).split('=');
-      if (url) meta.icons[name.trim()] = url.trim();
-      else meta.icons['default'] = name.trim();
+      const declaration = line.slice(7);
+      const separator = declaration.indexOf('=');
+      if (separator >= 0) {
+        const name = declaration.slice(0, separator).trim();
+        const url = declaration.slice(separator + 1).trim();
+        if (name && url) meta.icons[name] = url;
+      } else if (declaration.trim()) {
+        meta.icons['default'] = declaration.trim();
+      }
     } else if (/^\d{4}\/\d{2}\/\d{2}/.test(line)) {
       items.push({ type: 'date', content: line });
     } else if (/\d{2}:\d{2}\t/.test(line)) {
