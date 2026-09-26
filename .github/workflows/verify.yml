@@ -13,5 +13,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Parser regression tests
-        run: node --test tests/line-parser.test.cjs
+      - name: Parser and viewer lifecycle regression tests
+        run: node --test tests/*.test.cjs

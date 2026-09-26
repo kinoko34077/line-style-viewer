@@ -1,11 +1,41 @@
 
-document.getElementById('fileInput').addEventListener('change', async (event) => {
-  const file = event.target.files[0];
+const fileInput = document.getElementById('fileInput');
+const sourceStatus = document.getElementById('sourceStatus');
+let currentSourceName = null;
+
+fileInput.addEventListener('change', async (event) => {
+  const input = event.target;
+  const file = input.files && input.files[0];
   if (!file) return;
-  const text = await file.text();
-  const merged = parseMultiline(text);
-  renderChat(parseText(merged));
+
+  // Capture the File object, then clear the native picker so the same path can
+  // be selected again after this load finishes.
+  input.value = '';
+  input.disabled = true;
+  setSourceStatus('loading', `読み込み中: ${file.name}`);
+
+  try {
+    const text = await file.text();
+    const merged = parseMultiline(text);
+    renderChat(parseText(merged));
+    currentSourceName = file.name;
+    setSourceStatus('ready', `表示中: ${file.name}`);
+  } catch (error) {
+    const retained = currentSourceName
+      ? `（表示中: ${currentSourceName}）`
+      : '（表示中のファイルはありません）';
+    setSourceStatus('error', `読み込み失敗: ${file.name} ${retained}`);
+    console.error('Failed to load chat file:', error);
+  } finally {
+    input.disabled = false;
+  }
 });
+
+function setSourceStatus(state, message) {
+  if (!sourceStatus) return;
+  sourceStatus.dataset.state = state;
+  sourceStatus.textContent = message;
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -92,12 +122,13 @@ function parseText(text) {
 
 function renderChat({ meta, items }) {
   const container = document.getElementById('chatContainer');
-  container.innerHTML = '';
+  const html = [];
+
   for (const item of items) {
     if (item.type === 'date') {
-      container.innerHTML += `<div class="date-label">${escapeHtml(item.content)}</div>`;
+      html.push(`<div class="date-label">${escapeHtml(item.content)}</div>`);
     } else if (item.type === 'system') {
-      container.innerHTML += `<div class="system">${escapeHtml(item.content)}</div>`;
+      html.push(`<div class="system">${escapeHtml(item.content)}</div>`);
     } else {
       const isSelf = item.name === meta.user;
       const icon = meta.icons[item.name] || meta.icons['default'] || './default/default-icon.png';
@@ -121,7 +152,7 @@ function renderChat({ meta, items }) {
         contentHTML = escapeHtml(item.content.replace(/^"|"$/g, '')).replace(/\n/g, '<br>');
       }
 
-      container.innerHTML += `
+      html.push(`
         <div class="talk ${isSelf ? 'me' : 'you'}">
           <img class="icon" src="${safeIcon}" />
           <div class="message-block-with-meta">
@@ -129,8 +160,9 @@ function renderChat({ meta, items }) {
             <div class="meta-inline">${safeTime}${isSelf ? '　既読' : ''}</div>
           </div>
         </div>
-      `;
-
+      `);
     }
   }
+
+  container.innerHTML = html.join('');
 }

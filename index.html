@@ -8,7 +8,10 @@
 </head>
 <body>
   <h1>LINE風トークビューア</h1>
-  <input type="file" id="fileInput" accept=".txt,.md" />
+  <div class="file-controls">
+    <input type="file" id="fileInput" accept=".txt,.md" />
+    <div id="sourceStatus" class="source-status" data-state="idle" role="status" aria-live="polite">ファイル未選択</div>
+  </div>
   <div id="chatContainer"></div>
   <script src="script.js"></script>
 </body>
