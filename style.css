@@ -9,6 +9,33 @@ body {
   padding: 20px;
 }
 
+.file-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.source-status {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 0.85rem;
+}
+
+.source-status[data-state='loading'] {
+  color: #d8ecff;
+}
+
+.source-status[data-state='ready'] {
+  color: #d8ffe2;
+}
+
+.source-status[data-state='error'] {
+  color: #ffd9d9;
+}
+
 #chatContainer {
   max-width: 600px;
   margin: auto;
