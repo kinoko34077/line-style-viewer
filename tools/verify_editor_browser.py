@@ -213,6 +213,19 @@ def main():
             page.set_input_files("#projectFileInput",{"name":"bad.json","mimeType":"application/json","buffer":b"{not-json"})
             page.wait_for_function("document.querySelector('#sourceStatus').dataset.state==='error'")
             assert project(page)["title"]=="制作中のトーク"
+            assert page.locator("#editorErrorToast").is_visible()
+            # Oversized projects must be rejected BEFORE File.text is called,
+            # to avoid an unnecessary 120MB+ allocation on mobile Safari.
+            rejected=page.evaluate("""async () => {
+                let read=false;
+                const before=JSON.stringify(window.talkEditor.getProject());
+                await window.talkEditor.importProject({
+                    size:130*1024*1024, text:async()=>{read=true;return '{}';}
+                });
+                return {read,unchanged:before===JSON.stringify(window.talkEditor.getProject())};
+            }""")
+            assert not rejected["read"] and rejected["unchanged"],rejected
+            assert page.locator("#editorErrorToast").is_visible()
             page.click("#settingsClose")
             # Audit: a date chip is visually shortened in the current year,
             # but opening and closing inline editing must NOT erase the year.
