@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
 
 function createViewer() {
   const listeners = {};
@@ -120,4 +121,32 @@ test('a file with no actual senders keeps the identity control disabled', async 
   await viewer.load('empty.txt','[LINE] Bとのトーク履歴\n保存日時：2017/05/07 23:42');
   assert.equal(viewer.selfSelector.disabled,true);
   assert.equal(viewer.selfSelector.value,'');
+});
+
+
+test('self-picker stays anchored to the upper-right with fixed width before and after import', () => {
+  assert.match(html, /id="selfSelector" disabled>[\s\S]*<option value="">未読み込み<\/option>/);
+  assert.match(css, /\.viewer-header\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/);
+  assert.match(css, /\.self-picker\s*\{[^}]*justify-self:\s*end;/);
+  assert.match(css, /\.self-picker select\s*\{[^}]*width:\s*clamp\(136px,\s*36vw,\s*184px\);/);
+  assert.doesNotMatch(css, /\.viewer-header\s*\{[^}]*flex-wrap:\s*wrap/);
+});
+
+test('inferred consecutive sender appears in the same side and does not add empty selector options', async () => {
+  const viewer=createViewer();
+  await viewer.load('continue.txt', [
+    '2026/10/13(火)',
+    '09:00\tA\tfirst',
+    '09:01\t\tsecond',
+    '09:02\t\t[ファイル]',
+    '09:03\tB\treply',
+    '09:04\t\tfollow up'
+  ].join('\n'));
+  assert.deepEqual(viewer.options.map(o=>o.value), ['', 'A','B']);
+  viewer.select('A');
+  assert.equal((viewer.container.innerHTML.match(/class="talk me"/g)||[]).length,3);
+  assert.equal((viewer.container.innerHTML.match(/class="talk you"/g)||[]).length,2);
+  viewer.select('B');
+  assert.equal((viewer.container.innerHTML.match(/class="talk me"/g)||[]).length,2);
+  assert.equal((viewer.container.innerHTML.match(/class="talk you"/g)||[]).length,3);
 });
