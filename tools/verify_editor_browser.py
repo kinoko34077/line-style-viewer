@@ -20,6 +20,8 @@ def main():
             page.wait_for_function("!!window.talkEditor")
             assert project(page)["items"]==[],("not initially blank",project(page))
             assert page.locator("#conversationTitle").inner_text()=="トーク"
+            assert page.locator("#emptyImportButton").count()==1
+            assert page.locator("[data-drag-handle]").count()==0
             page.locator("#composeInput").fill("新規テスト")
             page.click("#sendButton")
             assert len(project(page)["items"])==1
@@ -29,17 +31,23 @@ def main():
             page.click("#redoButton")
             assert len(project(page)["items"])==1
             edit=page.locator('[data-edit-body]').first
+            assert edit.get_attribute("contenteditable")=="false"
+            edit.dblclick()
+            assert edit.get_attribute("contenteditable")=="true"
             edit.fill("編集済み <img src=x onerror=alert(1)>")
             edit.press("Tab")
             assert project(page)["items"][0]["content"]=="編集済み <img src=x onerror=alert(1)>"
             assert page.locator("#chatContainer img[src=x]").count()==0
             t=page.locator('[data-edit-time]').first
+            assert t.get_attribute("readonly") is not None
+            t.dblclick()
             t.fill("01:23");t.press("Tab")
             assert project(page)["items"][0]["time"]=="01:23"
             page.click("#addMenuToggle")
             page.click("#addIncomingButton")
             assert len(project(page)["items"])==2 and project(page)["items"][1]["side"]=="you"
             peer=page.locator('[data-edit-body]').last
+            peer.dblclick()
             peer.fill("相手の発言");peer.press("Tab")
             page.click("#addMenuToggle")
             page.click("#addSystemButton")
@@ -92,10 +100,24 @@ def main():
             assert exported["version"]==1 and exported["title"]=="制作中のトーク"
             assert any(i.get("media") and i["media"]["name"]=="sample.png" for i in exported["items"])
             assert any(i.get("media") and i["media"]["name"]=="unknown.sh" for i in exported["items"])
+            # Native-looking TXT export keeps sender, date and content; JSON keeps binary bytes.
+            with page.expect_download() as txt_download:
+                page.click("#exportTxtButton")
+            exported_txt=Path(txt_download.value.path()).read_text(encoding="utf-8-sig")
+            assert "# user:" in exported_txt
+            assert "登場人物" in exported_txt
+            assert "[写真]" in exported_txt and "data:image" not in exported_txt
+            parsed_again=page.evaluate("""text=>{
+                const decoded=parseText(parseMultiline(text));
+                return {self:decoded.meta.user,title:decoded.meta.title,rows:decoded.items.length};
+            }""",exported_txt)
+            assert parsed_again["self"]==project(page)["self"]
+            assert parsed_again["title"]=="制作中のトーク"
+            assert parsed_again["rows"]>=3
             page.click("#settingsClose")
-            # Pointer drag to center converts a peer message into system.
+            # Pointer drag directly on the bubble converts peer into system.
             peerId=project(page)["items"][1]["id"]
-            grip=page.locator('[data-entry-id="'+peerId+'"] [data-drag-handle]')
+            grip=page.locator('[data-entry-id="'+peerId+'"] .balloon')
             box=grip.bounding_box()
             chat=page.locator("#chatContainer").bounding_box()
             x=box["x"]+box["width"]/2;y=box["y"]+box["height"]/2
@@ -114,7 +136,7 @@ def main():
             def touch_move(side):
                 page.evaluate("""({id, side}) => {
                     const row=[...document.querySelectorAll('[data-entry-id]')].find(el=>el.dataset.entryId===id);
-                    const grip=row.querySelector('[data-drag-handle]'),r=grip.getBoundingClientRect();
+                    const grip=row.querySelector('.balloon'),r=grip.getBoundingClientRect();
                     const container=document.getElementById('chatContainer').getBoundingClientRect();
                     const x=r.x+r.width/2,y=r.y+r.height/2;
                     const target=side==='you'?container.left+container.width*.10:
@@ -123,9 +145,14 @@ def main():
                         bubbles:true,button:0,buttons:type==='pointerup'?0:1,
                         pointerId:55,pointerType:'touch',clientX:px,clientY:py
                     }));
-                    dispatch('pointerdown',x,y);
-                    dispatch('pointermove',target,y+30);
-                    dispatch('pointerup',target,y+30);
+                    return new Promise(resolve=>{
+                        dispatch('pointerdown',x,y);
+                        setTimeout(()=>{
+                            dispatch('pointermove',target,y+30);
+                            dispatch('pointerup',target,y+30);
+                            resolve();
+                        },400);
+                    });
                 }""",{"id":peerId,"side":side})
             touch_move("you")
             assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="you"
