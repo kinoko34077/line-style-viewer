@@ -93,22 +93,19 @@ function escapeHtml(value) {
 }
 
 function parseMultiline(text) {
-  text = text.replace(/\r\n|\r/g, '\n');
-
-  const lines = text.split('\n');
+  const lines = String(text).replace(/\r\n|\r/g, '\n').split('\n');
   const result = [];
   let buffer = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
+    const recordStart = /^"?\d{2}:\d{2}\t/.test(line);
+    const dateStart = /^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(trimmed);
 
     if (buffer !== null) {
-      // A missing closing quote must not consume later LINE messages or days.
-      // This intentionally uses real record/date boundaries rather than a
-      // quoted "[LINE]" header, which can appear inside legitimate messages.
-      const nextRecord = /^\d{2}:\d{2}\t/.test(line) ||
-        /^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(trimmed);
-      if (!nextRecord) {
+      // Recover a missing final quote at the next genuine row/day boundary.
+      // Do not treat "[LINE]" and "保存日時" inside a quoted body as metadata.
+      if (!recordStart && !dateStart) {
         buffer += '\n' + line;
         if (/(^|[^\\])"$/.test(trimmed)) {
           result.push(buffer);
@@ -116,18 +113,18 @@ function parseMultiline(text) {
         }
         continue;
       }
-      // Recover: keep the incomplete quote as its original message and
-      // process the new date/message line normally below.
       result.push(buffer);
       buffer = null;
     }
 
-    const fields = line.split('\t');
-    const messageField = fields.length >= 3 ? fields.slice(2).join('\t').trim() : trimmed;
-    const startsQuotedMessage = messageField.startsWith('"');
-    const closesOnSameLine = /(^|[^\\])"$/.test(messageField);
-
-    if (startsQuotedMessage && !closesOnSameLine) {
+    // LINE normally quotes the message body when it contains newlines:
+    // 12:00<TAB>A<TAB>"first\nsecond"
+    // Some copied/exported variants quote the entire record instead:
+    // "12:00<TAB>A<TAB>first\nsecond"
+    // Both need to become ONE logical row before classification.
+    const quotedRecord = /^"\d{2}:\d{2}\t/.test(line);
+    const quotedBody = /^\d{2}:\d{2}\t[^\t]*\t"/.test(line);
+    if ((quotedRecord || quotedBody) && !/(^|[^\\])"$/.test(trimmed)) {
       buffer = line;
     } else {
       result.push(line);
@@ -135,8 +132,16 @@ function parseMultiline(text) {
   }
 
   if (buffer !== null) result.push(buffer);
-
   return result;
+}
+
+// Only discard quotes that enclose the WHOLE record; message-content quotes
+// are processed separately. Do not strip legitimate quote characters from
+// an otherwise normal message.
+function normalizeQuotedRecord(line) {
+  if (!/^"\d{2}:\d{2}\t/.test(line)) return line;
+  const unwrapped = line.slice(1);
+  return unwrapped.endsWith('"') ? unwrapped.slice(0, -1) : unwrapped;
 }
 
 function getCallKind(value) {
@@ -169,7 +174,8 @@ function parseText(text) {
   // Keep this presentation inference local to the current uninterrupted run.
   let previousSpeaker = null;
 
-  for (const line of lines) {
+  for (const sourceLine of lines) {
+    const line = normalizeQuotedRecord(sourceLine);
     const trimmed = line.trim();
 
     // Exports may be pasted one after another, each with its own header.
@@ -200,8 +206,13 @@ function parseText(text) {
       previousSpeaker = null; // A new day is not necessarily the same person.
       currentSection.push({ type: 'date', content: trimmed });
     } else if (/^\d{2}:\d{2}\t/.test(line)) {
-      const [time, name, ...msgParts] = line.split('\t');
-      const content = msgParts.join('\t');
+      const fields = line.split('\t');
+      const time = fields[0];
+      // System notifications in native LINE TXT often have only two fields:
+      // "12:00<TAB>メッセージの送信を取り消しました"
+      // Three-field messages have a sender (possibly empty) and body.
+      const name = fields.length >= 3 ? fields[1] : '';
+      const content = fields.length >= 3 ? fields.slice(2).join('\t') : fields[1];
       const callKind = getCallKind(content);
       // Content semantics take precedence over absent sender metadata.
       // A nameless text/file row must not become a centered system pill.
@@ -219,8 +230,15 @@ function parseText(text) {
       // A leading unknown sender stays unknown instead of being guessed.
       previousSpeaker = isOrdinary && effectiveName.trim() ? effectiveName : null;
     } else if (trimmed !== '') {
-      previousSpeaker = null;
-      currentSection.push({ type: 'system', content: trimmed });
+      // Unknown/unquoted fragments are not evidence of a LINE system notice.
+      // Preserve them as ordinary text rather than centering timestamp/name
+      // fragments as fake system messages. The raw file remains untouched.
+      currentSection.push({
+        type: 'text',
+        name: previousSpeaker || '',
+        time: '',
+        content: line
+      });
     }
   }
 
