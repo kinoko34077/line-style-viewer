@@ -348,9 +348,11 @@ function repeatedHistoryPrefix(history, incoming) {
 
 // Render the same Japanese date-chip notation as the native screenshot,
 // without mutating source dates or deduplication keys.
-function displayDateLabel(value) {
+function displayDateLabel(value, currentYear = new Date().getFullYear()) {
   return String(value).replace(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(\([^)]*\))?$/, (_all, year, month, day, weekday = '') =>
-    `${year}年${Number(month)}月${Number(day)}日${weekday}`);
+    Number(year) === currentYear
+      ? `${Number(month)}/${Number(day)}${weekday}`
+      : `${year}年${Number(month)}月${Number(day)}日${weekday}`);
 }
 
 function renderChat({ meta, items }) {
