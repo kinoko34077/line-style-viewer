@@ -553,3 +553,149 @@ test('quoted whole-row snapshots deduplicate by logical sender/time/content', ()
   assert.equal(msgs[0].content,'一行目\n二行目');
   assert.equal(msgs[1].content,'次');
 });
+
+
+test('uploaded test export: unquoted continuation stays in original 18:32 A bubble', () => {
+  // Verbatim first export records of the provided anonymized 3,800-line file.
+  const parser = loadParser();
+  const input = [
+    '[LINE] Bとのトーク履歴',
+    '保存日時：2017/05/07 23:42',
+    '',
+    '2017/04/24(月)',
+    '18:32\tA\tほんと',
+    '試してみる',
+    '18:33\tB\tどの順番で進めるか決めよう。',
+    '18:33\tA\t[スタンプ]'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed.items)), [
+    {type:'date',content:'2017/04/24(月)'},
+    {type:'text',name:'A',time:'18:32',content:'ほんと\n試してみる'},
+    {type:'text',name:'B',time:'18:33',content:'どの順番で進めるか決めよう。'},
+    {type:'attachment',name:'A',time:'18:33',content:'[スタンプ]'}
+  ]);
+  parsed.meta.user='A';
+  parser.renderChat(parsed);
+  const html=parser.document.getElementById('chatContainer').innerHTML;
+  assert.equal((html.match(/class="talk me"/g) || []).length,2);
+  assert.equal((html.match(/class="talk you"/g) || []).length,1);
+  assert.equal((html.match(/class="system"/g) || []).length,0);
+  assert.match(html,/class="balloon">ほんと<br>試してみる<\/div>/);
+  assert.match(html,/class="time">18:32/);
+  assert.doesNotMatch(html,/class="balloon">試してみる<\/div>/);
+});
+
+test('uploaded test export: single-digit hours, multiline and explicit sender', () => {
+  const parser=loadParser();
+  const input=[
+    '[LINE] Bとのトーク履歴',
+    '保存日時：2018/07/02 07:27',
+    '',
+    '2017/08/27(日)',
+    '3:06\tA\tちょっと待って',
+    '3:07\tA\tイベントで使う道具はだいたい揃ったよ。',
+    '3:09\tA\t終わったら一緒にお茶でも飲もう。',
+    '句読点や「かぎ括弧」、数字の123、英字のABCも混ぜてみた。',
+    '3:11\tA\tあとで共有するから少し確認してね。',
+    'そのファイル、もう開けるはずだよ。',
+    '7:12\tB\t今日は思ったより風が強いね。'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(input));
+  const messages=parsed.items.filter(x=>x.type!=='date');
+  assert.deepEqual(Array.from(messages,x=>x.time),['3:06','3:07','3:09','3:11','7:12']);
+  assert.deepEqual(Array.from(messages,x=>x.name),['A','A','A','A','B']);
+  assert.equal(messages[2].content,'終わったら一緒にお茶でも飲もう。\n句読点や「かぎ括弧」、数字の123、英字のABCも混ぜてみた。');
+  assert.equal(messages[3].content,'あとで共有するから少し確認してね。\nそのファイル、もう開けるはずだよ。');
+  assert.equal(messages.some(x=>x.type==='system'),false);
+});
+
+test('unquoted multiline paragraph and initial empty body retain original newlines', () => {
+  const parser=loadParser();
+  const input=[
+    '2018/02/28(水)',
+    '18:25\tA\t',
+    '了解',
+    '18:26\tB\t一段落目',
+    '二段落目',
+    '',
+    '三段落目',
+    '18:27\tA\t終了'
+  ].join('\n');
+  const msgs=parser.parseText(parser.parseMultiline(input)).items.filter(x=>x.type!=='date');
+  assert.equal(msgs.length,3);
+  assert.equal(msgs[0].content,'\n了解');
+  assert.equal(msgs[1].content,'一段落目\n二段落目\n\n三段落目');
+  assert.equal(msgs[2].content,'終了');
+});
+
+test('preserve 24:xx raw export time and regular source date boundaries', () => {
+  const parser=loadParser();
+  const input=[
+    '2017/09/20(水)',
+    '24:26\tA\t[スタンプ]',
+    '21:57\tA\t通話に応答がありませんでした。',
+    '2017/09/21(木)',
+    '24:06\tB\t通話時間 1:36:30',
+    '12:43\tB\t今日の昼ごはんは何にする？'
+  ].join('\n');
+  const out=parser.parseText(parser.parseMultiline(input)).items;
+  assert.deepEqual(Array.from(out.filter(x=>x.type!=='date'),x=>x.time),
+    ['24:26','21:57','24:06','12:43']);
+  assert.deepEqual(Array.from(out.filter(x=>x.type!=='date'),x=>x.type),
+    ['attachment','call','call','text']);
+  assert.equal(out.filter(x=>x.type==='date').length,2);
+});
+
+test('real export boundary stops unquoted continuations; repeated backup overlap preserved', () => {
+  const parser=loadParser();
+  const input=[
+    '[LINE] Bとのトーク履歴',
+    '2017/08/27(日)',
+    '3:06\tA\tちょっと待って',
+    '続き',
+    '[LINE] Bとのトーク履歴',
+    '保存日時：2018/07/02 07:27',
+    '2017/08/27(日)',
+    '3:06\tA\tちょっと待って',
+    '続き',
+    '3:07\tB\t追加'
+  ].join('\n');
+  const items=parser.parseText(parser.parseMultiline(input)).items.filter(x=>x.type!=='date');
+  assert.deepEqual(Array.from(items,x=>x.content),['ちょっと待って\n続き','追加']);
+  assert.equal(items[0].name,'A');
+  assert.equal(items[1].name,'B');
+});
+
+test('malformed timestamp with spaces stays a separate ordinary text record', () => {
+  const parser=loadParser();
+  const input=[
+    '9:41\tA\t最初',
+    '9:42 A タブ消失',
+    '9:43\tB\t後続'
+  ].join('\n');
+  const msg=parser.parseText(parser.parseMultiline(input)).items;
+  assert.equal(msg.length,3);
+  assert.equal(msg[0].time,'9:41');
+  assert.equal(msg[1].time,'');
+  assert.equal(msg[1].content,'9:42 A タブ消失');
+  assert.equal(msg[1].type,'text');
+  assert.equal(msg[2].time,'9:43');
+});
+
+test('unquoted multiline markup is escaped, not treated as system or HTML', () => {
+  const parser=loadParser();
+  const raw=[
+    '8:00\tB\t最初',
+    '<img src=x onerror=alert(1)>',
+    '次の行',
+    '8:01\tA\t終了'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(raw));
+  parsed.meta.user='A';
+  parser.renderChat(parsed);
+  const html=parser.document.getElementById('chatContainer').innerHTML;
+  assert.doesNotMatch(html,/<img src=x onerror/);
+  assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;<br>次の行/);
+  assert.equal((html.match(/class="system"/g)||[]).length,0);
+});
