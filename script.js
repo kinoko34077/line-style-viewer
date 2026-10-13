@@ -52,7 +52,9 @@ if (scaleControl) scaleControl.addEventListener('input', () => applyUiScale(scal
 if (themeSelector) themeSelector.addEventListener('change', () => applyTheme(themeSelector.value));
 
 function rerenderSelectedChat() {
-  if (currentChat) {
+  if (typeof window !== 'undefined' && window.talkEditor) {
+    window.talkEditor.setIdentityAndMode(selectedSelfName, selectedChatMode);
+  } else if (currentChat) {
     renderChat({
       meta: {...currentChat.meta, user: selectedSelfName, chatMode: selectedChatMode},
       items: currentChat.items
@@ -91,7 +93,11 @@ fileInput.addEventListener('change', async (event) => {
     const parsed = parseText(merged);
     if (conversationTitle) conversationTitle.textContent = parsed.meta.title || 'トーク履歴';
     const selected = populateSelfSelector(parsed);
-    renderChat({meta: {...parsed.meta, user: selected, chatMode: selectedChatMode}, items: parsed.items});
+    if (typeof window !== 'undefined' && window.talkEditor) {
+      window.talkEditor.loadParsed(parsed, selected, selectedChatMode);
+    } else {
+      renderChat({meta: {...parsed.meta, user: selected, chatMode: selectedChatMode}, items: parsed.items});
+    }
     currentChat = parsed;
     currentSourceName = file.name;
     setSourceStatus('ready', `表示中: ${file.name}`);
