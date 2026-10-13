@@ -9,7 +9,7 @@ const {createLineTxt,lineDate,bodyText}=require('../txt-export.js');
 const source=fs.readFileSync(path.join(root,'script.js'),'utf8');
 function parse(text){
  const doc={
-  getElementById(){return null},
+  getElementById(id){return id==='fileInput'?{addEventListener(){}}:null},
   addEventListener(){}
  };
  const ctx={document:doc,console};
