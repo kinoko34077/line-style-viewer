@@ -7,6 +7,10 @@ on:
     paths:
       - tools/compare_native_line_pixels.py
       - .github/workflows/visual-reference.yml
+  pull_request:
+    paths:
+      - tools/compare_native_line_pixels.py
+      - .github/workflows/visual-reference.yml
   workflow_dispatch:
 
 permissions:
