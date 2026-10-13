@@ -103,12 +103,23 @@ function parseMultiline(text) {
     const trimmed = line.trim();
 
     if (buffer !== null) {
-      buffer += '\n' + line;
-      if (/(^|[^\\])"$/.test(trimmed)) {
-        result.push(buffer);
-        buffer = null;
+      // A missing closing quote must not consume later LINE messages or days.
+      // This intentionally uses real record/date boundaries rather than a
+      // quoted "[LINE]" header, which can appear inside legitimate messages.
+      const nextRecord = /^\d{2}:\d{2}\t/.test(line) ||
+        /^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(trimmed);
+      if (!nextRecord) {
+        buffer += '\n' + line;
+        if (/(^|[^\\])"$/.test(trimmed)) {
+          result.push(buffer);
+          buffer = null;
+        }
+        continue;
       }
-      continue;
+      // Recover: keep the incomplete quote as its original message and
+      // process the new date/message line normally below.
+      result.push(buffer);
+      buffer = null;
     }
 
     const fields = line.split('\t');
@@ -165,8 +176,14 @@ function parseText(text) {
     } else if (/^\d{2}:\d{2}\t/.test(line)) {
       const [time, name, ...msgParts] = line.split('\t');
       const content = msgParts.join('\t');
-      if (/メッセージを取り消しました|通話/.test(content)) {
-        currentSection.push({ type: 'system', content });
+      const isServiceNotice = !name.trim() ||
+        /^(?:.+が)?メッセージを取り消しました$/.test(content) ||
+        /^(?:音声|ビデオ)?通話時間(?:\s|[:：]|\d)/.test(content) ||
+        /^(?:音声|ビデオ)?通話(?:を開始しました|が終了しました|を終了しました)$/.test(content);
+      if (isServiceNotice) {
+        // Keep time/sender internally for exact overlap comparison even
+        // though service messages render without sender-specific balloons.
+        currentSection.push({ type: 'system', content, time, name });
       } else {
         currentSection.push({
           type: /^\[.*\]$/.test(content) ? 'attachment' : 'text',
