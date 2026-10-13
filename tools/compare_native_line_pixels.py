@@ -126,6 +126,19 @@ def run():
                 data=compare(native,output,(frame[1]-frame[0])*w,440)
                 overlay=data.pop("normalized_mask_overlay")
                 Image.fromarray(overlay).save(OUT/(key+"_"+side+"_overlay.png"))
+                Image.fromarray(native[0]).save(OUT/(key+"_"+side+"_reference_mask.png"))
+                Image.fromarray(output[0]).save(OUT/(key+"_"+side+"_viewer_mask.png"))
+                # The masks exclude text glyphs; get representative fill
+                # colors directly from the temporary source and the viewer.
+                def fill_color(image,bounds,expected):
+                    rgb=np.asarray(image.convert("RGB"))[bounds[1]:bounds[3],bounds[0]:bounds[2]]
+                    pix=rgb.reshape(-1,3).astype(np.float32)
+                    delta=np.linalg.norm(pix-np.array(expected,dtype=np.float32),axis=1)
+                    subset=pix[delta<(80 if expected[0]<200 else 30)]
+                    if not len(subset):return None
+                    return [int(v) for v in np.median(subset,axis=0)]
+                data["reference_fill_median_rgb"]=fill_color(original,native[1],refcol)
+                data["viewer_fill_median_rgb"]=fill_color(viewer,output[1],appcol)
                 data.update({"source":key,"url":url,"message_side":side,"native_size":[w,h]})
                 reports.append(data)
                 print("MEASURED",json.dumps(data,ensure_ascii=False),flush=True)
