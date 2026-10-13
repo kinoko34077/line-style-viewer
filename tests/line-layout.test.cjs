@@ -81,10 +81,10 @@ test('outgoing outer row is flush right and inner order is flipped; incoming is 
 
 test('standard bubbles, tails, avatar sizes and mobile fit are styled on their own sides', () => {
   assert.match(css, /\.balloon\s*\{[^}]*background:\s*#fff;/);
-  assert.match(css, /\.talk\.me\s+\.balloon\s*\{[^}]*background:\s*#a7ed74;/);
+  assert.match(css, /\.talk\.me\s+\.balloon\s*\{[^}]*background:\s*#a1e96c;/);
   assert.match(css, /\.talk\s+\.icon\s*\{[^}]*border-radius:\s*50%;/);
-  assert.match(css, /\.talk\.you\s+\.balloon::after\s*\{[^}]*left:\s*-7px;/);
-  assert.match(css, /\.talk\.me\s+\.balloon::after\s*\{[^}]*right:\s*-7px;/);
+  assert.match(css, /\.talk\.you\s+\.balloon::after\s*\{[^}]*left:\s*-8px;/);
+  assert.match(css, /\.talk\.me\s+\.balloon::after\s*\{[^}]*right:\s*-8px;/);
   assert.match(css, /@media\s*\(max-width:\s*600px\)/);
   assert.match(css, /\.balloon\s*\{[^}]*overflow-wrap:\s*break-word;/);
   assert.match(css, /\.balloon:has\(img\)::after/);
@@ -169,7 +169,7 @@ test('unavailable stamp pictogram is small with bounded margin and photo fallbac
 });
 
 test('avatar anchors to top of a long peer balloon, metadata still stays below', () => {
-  assert.match(css, /\.talk \.icon\s*\{[^}]*align-self:\s*flex-start;[^}]*margin-top:\s*2px;/);
+  assert.match(css, /\.talk \.icon\s*\{[^}]*align-self:\s*flex-start;[^}]*margin-top:\s*1px;/);
   assert.match(css, /\.message-block-with-meta\s*\{[^}]*align-items:\s*flex-end;/);
   const long='長文'.repeat(250);
   const view=render([{type:'text',name:'B',time:'09:32',content:long}]);
@@ -188,7 +188,47 @@ test('call cards have compact handset styling and are part of sender-side bubble
   assert.equal((out.match(/class="call-icon"/g)||[]).length,2);
   assert.match(out,/class="talk you"[\s\S]*?不在着信/);
   assert.match(out,/class="talk me"[\s\S]*?通話をキャンセルしました/);
-  assert.match(css,/\.call-icon\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/);
-  assert.match(css,/\.call-icon svg\s*\{[^}]*width:\s*19px;[^}]*height:\s*19px;/);
-  assert.match(css,/\.call-card\s*\{[^}]*max-width:\s*224px;/);
+  assert.match(css,/\.call-icon\s*\{[^}]*width:\s*38px;[^}]*height:\s*38px;/);
+  assert.match(css,/\.call-icon svg\s*\{[^}]*width:\s*21px;[^}]*height:\s*21px;/);
+  assert.match(css,/\.call-card\s*\{[^}]*max-width:\s*236px;/);
+});
+
+
+test('long loaded filename and long title stay within viewport and wrap', () => {
+  assert.match(css, /\.viewer-header h1\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*line-height:\s*1\.3;/);
+  assert.match(css, /\.file-controls\s*\{[^}]*min-width:\s*0;/);
+  assert.match(css, /\.file-controls input\[type='file'\]\s*\{[^}]*max-width:\s*100%;/);
+  assert.match(css, /\.source-status\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;/);
+  assert.match(css, /\.viewer-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/);
+  assert.match(css, /\.self-picker\s*\{[^}]*justify-self:\s*end;/);
+});
+
+test('LINE screenshot geometry has asymmetric curved tails rather than straight triangular horns', () => {
+  assert.match(css, /\.balloon\s*\{[^}]*border-radius:\s*6px 18px 18px 18px;/);
+  assert.match(css, /\.talk\.me \.balloon\s*\{[^}]*border-radius:\s*18px 6px 18px 18px;/);
+  assert.match(css, /\.talk\.you \.balloon::after\s*\{[^}]*left:\s*-8px;[^}]*clip-path:\s*path\(/);
+  assert.match(css, /\.talk\.me \.balloon::after\s*\{[^}]*right:\s*-8px;[^}]*clip-path:\s*path\(/);
+  assert.doesNotMatch(css, /clip-path:\s*polygon\(/);
+});
+
+test('message scale and read/time location remain consistent with native LINE references', () => {
+  assert.match(css, /\.message-block-with-meta\s*\{[^}]*align-items:\s*flex-end;/);
+  assert.match(css, /\.talk\.me \.message-block-with-meta\s*\{[^}]*flex-direction:\s*row-reverse;/);
+  assert.match(css, /\.balloon\s*\{[^}]*line-height:\s*1\.42;[^}]*font-size:\s*15px;/);
+  assert.match(css, /\.meta-inline\s*\{[^}]*font-size:\s*10px;/);
+  assert.match(css, /\.date-label,[\s\S]*?\.system\s*\{[^}]*border-radius:\s*999px;/);
+  assert.match(css, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.balloon\s*\{[^}]*font-size:\s*15px;/);
+  assert.match(css, /\.call-copy\s*\{[^}]*flex-direction:\s*column;/);
+  assert.match(css, /\.call-duration\s*\{[^}]*font-size:\s*12px;/);
+});
+
+test('native-inspired call duration has two-line title and duration without losing raw label', () => {
+  const msg = render([
+    {type:'call',name:'B',time:'11:20',content:'音声通話時間 01:42',callKind:'duration'},
+    {type:'call',name:'A',time:'11:22',content:'ビデオ通話時間 12:06',callKind:'duration'}
+  ]).markup;
+  assert.match(msg, /aria-label="音声通話時間 01:42"/);
+  assert.match(msg, /<strong class="call-label">音声通話<\/strong><span class="call-duration">01:42<\/span>/);
+  assert.match(msg, /<strong class="call-label">ビデオ通話<\/strong><span class="call-duration">12:06<\/span>/);
+  assert.equal((msg.match(/class="call-card"/g)||[]).length,2);
 });
