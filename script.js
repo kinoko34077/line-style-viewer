@@ -3,10 +3,53 @@ const fileInput = document.getElementById('fileInput');
 const sourceStatus = document.getElementById('sourceStatus');
 const selfSelector = document.getElementById('selfSelector');
 const chatModeSelector = document.getElementById('chatModeSelector');
+const conversationTitle = document.getElementById('conversationTitle');
+const menuToggle = document.getElementById('menuToggle');
+const settingsBackdrop = document.getElementById('settingsBackdrop');
+const settingsClose = document.getElementById('settingsClose');
+const scaleControl = document.getElementById('scaleControl');
+const scaleOutput = document.getElementById('scaleOutput');
+const themeSelector = document.getElementById('themeSelector');
 let currentSourceName = null;
 let currentChat = null;
 let selectedSelfName = '';
 let selectedChatMode = 'auto';
+
+function applyUiScale(value) {
+  const scale = Math.min(160, Math.max(80, Math.round(Number(value) / 10) * 10 || 120));
+  document.documentElement.style.setProperty('--ui-scale', String(scale / 100));
+  if (scaleControl) scaleControl.value = String(scale);
+  if (scaleOutput) scaleOutput.textContent = scale + '%';
+  return scale;
+}
+
+function applyTheme(value) {
+  const theme = ['normal','black','white'].includes(value) ? value : 'normal';
+  document.documentElement.dataset.theme = theme;
+  if (themeSelector) themeSelector.value = theme;
+  return theme;
+}
+
+function toggleSettings(open) {
+  if (!settingsBackdrop || !menuToggle) return;
+  settingsBackdrop.hidden = !open;
+  menuToggle.setAttribute('aria-expanded', String(open));
+  menuToggle.setAttribute('aria-label', open ? '設定を閉じる' : '設定を開く');
+  if (open && settingsClose) settingsClose.focus();
+  if (!open) menuToggle.focus();
+}
+
+if (menuToggle) menuToggle.addEventListener('click', () =>
+  toggleSettings(settingsBackdrop.hidden));
+if (settingsClose) settingsClose.addEventListener('click', () => toggleSettings(false));
+if (settingsBackdrop) settingsBackdrop.addEventListener('click', (event) => {
+  if (event.target === settingsBackdrop) toggleSettings(false);
+});
+if (document.addEventListener) document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && settingsBackdrop && !settingsBackdrop.hidden) toggleSettings(false);
+});
+if (scaleControl) scaleControl.addEventListener('input', () => applyUiScale(scaleControl.value));
+if (themeSelector) themeSelector.addEventListener('change', () => applyTheme(themeSelector.value));
 
 function rerenderSelectedChat() {
   if (currentChat) {
@@ -46,6 +89,7 @@ fileInput.addEventListener('change', async (event) => {
     const text = await file.text();
     const merged = parseMultiline(text);
     const parsed = parseText(merged);
+    if (conversationTitle) conversationTitle.textContent = parsed.meta.title || 'トーク履歴';
     const selected = populateSelfSelector(parsed);
     renderChat({meta: {...parsed.meta, user: selected, chatMode: selectedChatMode}, items: parsed.items});
     currentChat = parsed;
@@ -215,7 +259,7 @@ function isSystemNotice(value, senderName) {
 
 function parseText(text) {
   const lines = Array.isArray(text) ? text : String(text).split(/\r?\n/);
-  const meta = { user: null, icons: {} };
+  const meta = { user: null, icons: {}, title: '' };
   const sections = [[]];
   let currentSection = sections[0];
   // A blank sender in consecutive ordinary records denotes the same author.
@@ -229,6 +273,8 @@ function parseText(text) {
     // Exports may be pasted one after another, each with its own header.
     // A quoted multiline message has already been joined into one logical line.
     if (/^\[LINE\]\s*.+(?:との|の)トーク履歴\s*$/.test(trimmed)) {
+      const header = /^\[LINE\]\s*(.+?)(?:との|の)トーク履歴\s*$/.exec(trimmed);
+      if (header && !meta.title) meta.title = header[1].trim();
       previousSpeaker = null; // Never inherit across separately saved exports.
       if (currentSection.length) {
         currentSection = [];
