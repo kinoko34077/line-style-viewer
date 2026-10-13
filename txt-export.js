@@ -29,7 +29,7 @@ function createLineTxt(doc,now=new Date()){
       else out.push('# system-json: '+JSON.stringify({time:'',content:String(item.content||'')}));
       continue;
     }
-    const time=String(item.time??''),content=item.content==='[スタンプ]'?'[スタンプ]':item.media?.data?(item.media.mime?.startsWith('image/')?'[写真]':item.media.mime?.startsWith('video/')?'[動画]':'[ファイル]'):String(item.content??'');
+    const time=String(item.time??''),content=(item.content==='[スタンプ]'||/^\[(?:stk|stamp|sticker)[_-][^\]]+\.(?:svg|png|gif|webp|jpe?g)\]$/i.test(item.content))?item.content:item.media?.data?(item.media.mime?.startsWith('image/')?'[写真]':item.media.mime?.startsWith('video/')?'[動画]':'[ファイル]'):String(item.content??'');
     if(item.type==='system'||item.side==='system'){
       out.push('# system-json: '+JSON.stringify({time,content}));continue;
     }
