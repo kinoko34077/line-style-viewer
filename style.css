@@ -118,6 +118,35 @@ body::before {
   font-size: 0.82rem;
 }
 
+/* Manual override only when a group has two or fewer observed speakers.
+   It does not alter the imported source or parsed sender names. */
+.chat-mode-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  min-width: 0;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.chat-mode-picker select {
+  box-sizing: border-box;
+  min-width: 78px;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #28333b;
+  color: #fff;
+  font: inherit;
+}
+
+.chat-mode-picker select:focus-visible {
+  outline: 2px solid #9ee6ff;
+  outline-offset: 2px;
+}
+
 .source-status[data-state='loading'] {
   color: #d8ecff;
 }
