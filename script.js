@@ -139,6 +139,24 @@ function parseMultiline(text) {
   return result;
 }
 
+function getCallKind(value) {
+  const text = value.trim();
+  // Match LINE-generated call outcomes, not ordinary sentences mentioning calls.
+  if (/^\[?不在着信(?:[（(](?:音声|ビデオ)通話[）)])?\]?$/.test(text)) return 'missed';
+  if (/^(?:応答なし|応答がありません|着信なし)$/.test(text)) return 'unanswered';
+  if (/^(?:キャンセル|通話をキャンセルしました)$/.test(text)) return 'cancelled';
+  if (/^(?:(?:音声|ビデオ)?通話時間)[\s:：]*\d{1,2}:\d{2}(?::\d{2})?$/.test(text)) return 'duration';
+  if (/^(?:音声|ビデオ)通話$/.test(text)) return 'duration';
+  if (/^(?:(?:音声|ビデオ)?通話)(?:を開始しました|を終了しました|が終了しました)$/.test(text)) return 'duration';
+  return null;
+}
+
+function isUnsendNotice(value) {
+  // Cancellation has a defined LINE-export wording. A merely blank sender
+  // or a message *mentioning* the phrase is not proof of a service notice.
+  return /^(?:[^\n\t]{1,80}が)?メッセージ(?:の送信)?を取り消しました。?$/.test(value.trim());
+}
+
 function parseText(text) {
   const lines = Array.isArray(text) ? text : String(text).split(/\r?\n/);
   const meta = { user: null, icons: {} };
@@ -176,20 +194,16 @@ function parseText(text) {
     } else if (/^\d{2}:\d{2}\t/.test(line)) {
       const [time, name, ...msgParts] = line.split('\t');
       const content = msgParts.join('\t');
-      const isServiceNotice = !name.trim() ||
-        /^(?:.+が)?メッセージを取り消しました$/.test(content) ||
-        /^(?:音声|ビデオ)?通話時間(?:\s|[:：]|\d)/.test(content) ||
-        /^(?:音声|ビデオ)?通話(?:を開始しました|が終了しました|を終了しました)$/.test(content);
-      if (isServiceNotice) {
-        // Keep time/sender internally for exact overlap comparison even
-        // though service messages render without sender-specific balloons.
-        currentSection.push({ type: 'system', content, time, name });
-      } else {
-        currentSection.push({
-          type: /^\[.*\]$/.test(content) ? 'attachment' : 'text',
-          name, time, content
-        });
-      }
+      const callKind = getCallKind(content);
+      // Content semantics take precedence over absent sender metadata.
+      // A nameless text/file row must not become a centered system pill.
+      const type = isUnsendNotice(content)
+        ? 'system'
+        : callKind ? 'call'
+          : /^\[.*\]$/.test(content) ? 'attachment' : 'text';
+      currentSection.push({
+        type, name, time, content, ...(callKind ? {callKind} : {})
+      });
     } else if (trimmed !== '') {
       currentSection.push({ type: 'system', content: trimmed });
     }
@@ -273,7 +287,9 @@ function renderChat({ meta, items }) {
     } else if (item.type === 'system') {
       html.push(`<div class="system">${escapeHtml(item.content)}</div>`);
     } else {
-      const isSelf = item.name === meta.user;
+      const isSelf = item.type === 'call' && item.callKind === 'missed' ? false
+        : item.type === 'call' && ['unanswered', 'cancelled'].includes(item.callKind) ? true
+          : Boolean(meta.user && item.name === meta.user);
       const icon = meta.icons[item.name] || meta.icons['default'] || './default/default-icon.png';
       const safeIcon = escapeHtml(icon);
       const safeTime = escapeHtml(item.time);
@@ -296,7 +312,10 @@ function renderChat({ meta, items }) {
         // Original filename and file bytes are absent from LINE text exports.
         contentHTML = '<div class="file-card" role="group" aria-label="ファイル（詳細不明）"><span class="file-card-icon" aria-hidden="true">▤</span><span class="file-card-label">ファイル</span></div>';
       } else if (item.content === '[スタンプ]') {
-        contentHTML = `<img src="./default/default-stamp.png">`;
+        contentHTML = '<img class="stamp-fallback" src="./default/default-stamp.png" alt="スタンプ（画像データなし）">';
+      } else if (item.type === 'call') {
+        const safeLabel = escapeHtml(item.content.replace(/^\[|\]$/g, ''));
+        contentHTML = `<div class="call-card" role="group" aria-label="通話履歴"><span class="call-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.56 3.57.56a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.19 2.45.56 3.57a1 1 0 01-.25 1.02z"/></svg></span><span class="call-label">${safeLabel}</span></div>`;
       } else {
         contentHTML = escapeHtml(item.content.replace(/^"|"$/g, '')).replace(/\n/g, '<br>');
       }
