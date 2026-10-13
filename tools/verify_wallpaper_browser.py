@@ -53,6 +53,7 @@ def run():
             page.set_input_files("#fileInput",{"name":"sample.txt","mimeType":"text/plain","buffer":encoded})
             page.wait_for_function("document.querySelector('#sourceStatus').dataset.state==='ready'")
             assert page.locator("#conversationTitle").inner_text()=="B"
+            page.evaluate("""() => {const e=document.getElementById('selfSelector'); if(e.options.length>1){e.value='A';e.dispatchEvent(new Event('change',{bubbles:true}))}}""")
             # Three theme palettes and complete UI (header/chat/footer) zoom.
             base=page.locator(".conversation-footer").bounding_box()["height"]
             assert page.locator("#scaleOutput").inner_text()=="120%"
@@ -88,7 +89,6 @@ def run():
                 colors[theme]=data
             if len({data["sent"] for data in colors.values()})!=3:
                 raise AssertionError(f"theme bubble colors not distinct: {colors}")
-            page.evaluate("""() => {const e=document.getElementById('selfSelector'); if(e.options.length>1){e.value='A';e.dispatchEvent(new Event('change',{bubbles:true}))}}""")
             date_text=page.locator(".date-label").first.inner_text()
             from datetime import date
             expected_date="10/13(火)" if date.today().year==2026 else "2026年10月13日(火)"
