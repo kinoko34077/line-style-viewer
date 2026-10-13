@@ -57,7 +57,7 @@ def run():
             balloon=page.locator(".talk.you .balloon").first
             sr=first_named.bounding_box();br=balloon.bounding_box();ar=avatar.bounding_box()
             if sr["y"]>=br["y"] or abs(sr["x"]-br["x"])>1:raise AssertionError("name misaligned")
-            if width<=600 and (ar["width"]!=24 or ar["height"]!=24):
+            if width<=600 and (ar["width"]!=28 or ar["height"]!=28):
                 raise AssertionError(f"avatar size not screenshot-calibrated: {ar}")
             row_count=page.locator(".talk").count()
             if row_count!=3000:raise AssertionError(f"lost rows: {row_count}")
