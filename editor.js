@@ -400,6 +400,7 @@ function selectFromPointer(e,row){
 }
 function clearDrag(){
  clearTimeout(holdTimer);holdTimer=null;
+ if(drag?.frame!=null)cancelAnimationFrame(drag.frame);
  if(drag?.row){drag.row.style.transform='';drag.row.classList.remove('is-moving');}
  if(guide)guide.remove();guide=null;drag=null;pendingPointer=null;
  document.body.classList.remove('editor-dragging');
@@ -407,14 +408,19 @@ function clearDrag(){
 function beginDrag(info){
  if(!info || drag)return;
  const row=info.row;
- drag={id:row.dataset.entryId,row,x:info.x,y:info.y,zone:row.dataset.side,moved:false};
+ // Measure once per drag rather than forcing layout on every pointer event.
+ const bounds=transcript.getBoundingClientRect();
+ drag={id:row.dataset.entryId,row,x:info.x,y:info.y,zone:row.dataset.side,
+   drawnZone:null,lastX:info.x,lastY:info.y,moved:false,
+   bounds,frame:null,guides:null};
  try{row.setPointerCapture?.(info.pointerId);}catch{}
  row.classList.add('is-moving');document.body.classList.add('editor-dragging');
  guide=document.createElement('div');guide.className='editor-drop-guide';
  guide.innerHTML='<span>相手</span><span>システム</span><span>自分</span>';
+ drag.guides=Array.from(guide.children);
  document.body.appendChild(guide);
- const r=transcript.getBoundingClientRect();
- Object.assign(guide.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+ Object.assign(guide.style,{left:bounds.left+'px',top:bounds.top+'px',
+   width:bounds.width+'px',height:bounds.height+'px'});
 }
 transcript.addEventListener('pointerdown',e=>{
  const row=e.target.closest('[data-entry-id]');
@@ -428,6 +434,19 @@ transcript.addEventListener('pointerdown',e=>{
  // For mouse, start only AFTER moving 6px: keeping pointer capture off
  // normal taps is essential to target the time field on double-click.
 });
+function paintDragFrame(){
+ if(!drag)return;
+ drag.frame=null;
+ const {row,bounds,lastX,lastY,x,y,zone}=drag;
+ row.style.transform=`translate3d(${lastX-x}px,${lastY-y}px,0)`;
+ if(zone!==drag.drawnZone){
+   drag.drawnZone=zone;
+   drag.guides.forEach((element,i)=>
+     element.classList.toggle('active',['you','system','me'][i]===zone));
+ }
+ if(lastY<bounds.top+28)transcript.scrollTop-=15;
+ else if(lastY>bounds.bottom-28)transcript.scrollTop+=15;
+}
 transcript.addEventListener('pointermove',e=>{
  if(pendingPointer && !drag){
    const delta=Math.hypot(e.clientX-pendingPointer.x,e.clientY-pendingPointer.y);
@@ -442,12 +461,11 @@ transcript.addEventListener('pointermove',e=>{
  if(e.cancelable)e.preventDefault();
  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
  if(Math.hypot(dx,dy)>6)drag.moved=true;
- drag.row.style.transform=`translate(${dx}px,${dy}px)`;
- const r=transcript.getBoundingClientRect(),fraction=(e.clientX-r.left)/r.width;
+ drag.lastX=e.clientX;drag.lastY=e.clientY;
+ const fraction=(e.clientX-drag.bounds.left)/drag.bounds.width;
  drag.zone=fraction<.36?'you':fraction>.64?'me':'system';
- [...guide.children].forEach((el,i)=>el.classList.toggle('active',['you','system','me'][i]===drag.zone));
- if(e.clientY<r.top+28)transcript.scrollTop-=15;
- if(e.clientY>r.bottom-28)transcript.scrollTop+=15;
+ // Coalesce high-frequency input into one visual update per animation frame.
+ if(drag.frame==null)drag.frame=requestAnimationFrame(paintDragFrame);
 });
 transcript.addEventListener('pointerup',e=>{
  if(pendingPointer && !drag){
