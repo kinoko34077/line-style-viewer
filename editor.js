@@ -179,6 +179,18 @@ function exportJson(){
  const link=document.createElement('a');link.href=url;link.download=doc.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,64)+'.linechat.json';
  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);status('JSONを書き出しました');
 }
+function exportTxt(){
+ if(!window.LineTxtExport) {status('TXT書出し機能を読み込めませんでした',true);return;}
+ const text=window.LineTxtExport.createLineTxt(doc);
+ const name=doc.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,64)||'トーク';
+ const blob=new Blob(['\\uFEFF'.replace('\\uFEFF','\uFEFF')+text],{type:'text/plain;charset=utf-8'});
+ const url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download=name+'.txt';
+ document.body.appendChild(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),3000);
+ if(E('saveFormatMenu'))E('saveFormatMenu').hidden=true;
+ status('LINE形式のTXTを書き出しました（画像本体・編集履歴はJSONのみ保持）');
+}
 async function importJson(file){
  if(!file)return;
  try{const text=await file.text();if(text.length>120*1024*1024)throw Error('ファイルサイズ超過');
@@ -205,10 +217,16 @@ function setIdentityAndMode(self,mode){
  });
 }
 window.talkEditor={loadParsed:importParsed,setIdentityAndMode,getProject:()=>JSON.parse(snapshot()),
- addItem,undo,redo,exportProject:exportJson,importProject:importJson,replaceProject:p=>mutate(()=>{doc=sanitize(p);}),render};
+ addItem,undo,redo,exportProject:exportJson,exportTxt,importProject:importJson,replaceProject:p=>mutate(()=>{doc=sanitize(p);}),render};
 const on=(id,event,fn)=>E(id)?.addEventListener(event,fn);
 on('undoButton','click',undo);on('redoButton','click',redo);
-on('saveButton','click',exportJson);on('exportProjectButton','click',exportJson);
+on('saveButton','click',()=>{
+ const menu=E('saveFormatMenu');if(menu)menu.hidden=!menu.hidden;
+});
+on('saveTxtButton','click',exportTxt);
+on('saveJsonButton','click',()=>{E('saveFormatMenu').hidden=true;exportJson();});
+on('exportTxtButton','click',exportTxt);
+on('exportProjectButton','click',exportJson);
 on('projectFileInput','change',e=>{importJson(e.target.files[0]);e.target.value='';});
 on('newProjectButton','click',()=>{
  if(doc.items.length&&!confirm('現在のトークを消して新規作成しますか？（Undoで戻せます）'))return;
