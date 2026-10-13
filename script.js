@@ -358,6 +358,13 @@ function displayDateLabel(value, currentYear = new Date().getFullYear()) {
 function renderChat({ meta, items }) {
   const container = document.getElementById('chatContainer');
   const html = [];
+  // If three distinct people have spoken, this is a group. A small group
+  // with only two observed speakers requires manual room-type selection.
+  const speakers = new Set(items.filter(item =>
+    (item.type === 'text' || item.type === 'attachment') && item.name && item.name.trim()
+  ).map(item => item.name));
+  const showGroupNames = meta.chatMode === 'group' ||
+    (meta.chatMode !== 'direct' && speakers.size >= 3);
   // LINE groups successive messages by the same sender in the same minute:
   // the later bubble usually has no repeated profile picture or horn.
   // This is a purely visual decision. Keep every original message/time.
@@ -425,7 +432,7 @@ function renderChat({ meta, items }) {
         : '';
       // LINE shows the peer's name above the first incoming balloon of a run.
       // Never invent the speaker of an unknown-sender export row.
-      const senderLabelHTML = !isSelf && !grouped && item.name && item.name.trim()
+      const senderLabelHTML = showGroupNames && !isSelf && !grouped && item.name && item.name.trim()
         ? `<span class="sender-name">${escapeHtml(item.name)}</span>` : '';
       html.push(`
         <div class="talk ${isSelf ? 'me' : 'you'}"${grouped ? ' data-continuation="true"' : ''}>
