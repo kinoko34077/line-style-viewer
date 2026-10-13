@@ -30,6 +30,13 @@ def main():
             assert len(project(page)["items"])==0
             page.click("#redoButton")
             assert len(project(page)["items"])==1
+            assert page.locator(".delete-entry:visible").count()==0
+            page.locator(".editable-entry .balloon").first.click()
+            assert page.locator(".delete-entry:visible").count()==1
+            delete_box=page.locator(".delete-entry:visible").bounding_box()
+            bubble_box=page.locator(".editable-entry .balloon").first.bounding_box()
+            assert bubble_box["x"]<=delete_box["x"]<=bubble_box["x"]+bubble_box["width"]+12
+            assert delete_box["y"]<bubble_box["y"]+8
             edit=page.locator('[data-edit-body]').first
             assert edit.get_attribute("contenteditable")=="false"
             edit.dblclick()
@@ -37,6 +44,21 @@ def main():
             edit.fill("編集済み <img src=x onerror=alert(1)>")
             edit.press("Tab")
             assert project(page)["items"][0]["content"]=="編集済み <img src=x onerror=alert(1)>"
+            # Two touch taps should enter editing without any six-point handle.
+            page.evaluate("""() => {
+              const row=document.querySelector('.editable-entry');
+              const target=row.querySelector('.inline-body');
+              const r=target.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
+              for(let n=0;n<2;n++){
+                const send=type=>target.dispatchEvent(new PointerEvent(type,{
+                  bubbles:true,pointerType:'touch',pointerId:77,button:0,
+                  clientX:x,clientY:y
+                }));
+                send('pointerdown');send('pointerup');
+              }
+            }""")
+            assert page.locator('[data-edit-body]').first.get_attribute("contenteditable")=="true"
+            page.locator('[data-edit-body]').first.press("Tab")
             assert page.locator("#chatContainer img[src=x]").count()==0
             t=page.locator('[data-edit-time]').first
             assert t.get_attribute("readonly") is not None
