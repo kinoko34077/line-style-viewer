@@ -421,7 +421,7 @@ test('a group with only two visible speakers can be explicitly selected', () => 
 });
 
 test('current-year dates omit year while older dates retain year with original data intact', () => {
-  const ctx={document:{getElementById(id){return id==='fileInput'?{addEventListener(){}}:id==='selfSelector'||id==='chatModeSelector'?null:{innerHTML:''}}},console};
+  const ctx={document:{getElementById(id){return id==='fileInput'?{addEventListener(){}}:null}},console};
   vm.createContext(ctx);
   vm.runInContext(js,ctx);
   assert.equal(ctx.displayDateLabel('2026/06/27(土)',2026),'6/27(土)');
