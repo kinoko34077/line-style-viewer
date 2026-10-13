@@ -81,6 +81,9 @@ def main():
             page.click("#addMediaPlaceholderButton")
             placeholder=page.locator('[data-pick-media]').first
             assert placeholder.count()
+            assert page.locator(".unassigned-image img").first.get_attribute("src")=="./default/default-photo.png"
+            assert page.locator(".unassigned-image").first.inner_text().strip()==""
+            assert page.locator(".unassigned-image").first.get_attribute("aria-label")=="画像を選択"
             # The LINE-style Photos/Videos menu lists missing media bindings.
             page.click("#menuToggle")
             page.click('[data-toggle-section="mediaGallery"]')
@@ -90,6 +93,21 @@ def main():
             page.click("#settingsClose")
             page.wait_for_function("window.talkEditor.getProject().items.some(i=>i.media && i.media.data)")
             assert page.locator(".bound-image img").count()==1
+            # Missing stamps must show their ORIGINAL exclamation asset, not
+            # the generic photo icon; no useless select-label occupies space.
+            page.click("#addMenuToggle")
+            page.click("#addStampPlaceholderButton")
+            stamp=page.locator(".unassigned-stamp").last
+            assert stamp.count()==1
+            assert stamp.locator("img").get_attribute("src")=="./default/default-stamp.png"
+            assert stamp.inner_text().strip()==""
+            assert stamp.get_attribute("aria-label")=="スタンプを選択"
+            stamp.click()
+            page.set_input_files("#inlineMediaInput",{"name":"sticker.png","mimeType":"image/png","buffer":PNG})
+            page.wait_for_function("""() => window.talkEditor.getProject().items.some(
+                i => i.content==='[スタンプ]' && !!i.media?.data)""")
+            assert page.locator(".bound-stamp img").count()==1
+            assert next(i for i in project(page)["items"] if i["content"]=="[スタンプ]")["type"]=="attachment"
             # Unknown local file MIME must become a safe generic binary
             # download without executing HTML, script or embedded content.
             page.click("#addMenuToggle")
