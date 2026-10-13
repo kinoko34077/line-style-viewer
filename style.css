@@ -209,6 +209,12 @@ body {
   color: #1e2818;
 }
 
+/* Own continuation pill needs a full-radius override after .talk.me's
+   asymmetric leading bubble corners (the selectors otherwise tie). */
+.talk.me[data-continuation="true"] .balloon {
+  border-radius: 18px;
+}
+
 /* Read status is above the sent time, on the left of the outgoing balloon.
    Incoming messages show only a time at the lower-right of the balloon. */
 .meta-inline {
