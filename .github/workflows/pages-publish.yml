@@ -40,3 +40,22 @@ jobs:
       - name: Publish accepted main
         id: deploy
         uses: actions/deploy-pages@v4
+      - name: Confirm live Pages HTML and TXT export asset
+        env:
+          SITE_URL: ${{ steps.deploy.outputs.page_url }}
+        run: |
+          site="${SITE_URL%/}"
+          test -n "$site"
+          for attempt in $(seq 1 18); do
+            if curl --fail --silent --show-error --location --max-time 20 "$site/" -o /tmp/line-index.html &&
+               grep -q 'txt-export.js' /tmp/line-index.html &&
+               curl --fail --silent --show-error --location --max-time 20 "$site/txt-export.js" -o /tmp/line-txt-export.js &&
+               grep -q 'createLineTxt' /tmp/line-txt-export.js; then
+              echo "LIVE_PAGES_VERIFIED=$site/"
+              exit 0
+            fi
+            echo "Waiting for new Pages public version: $attempt"
+            sleep 10
+          done
+          echo "::error::Published version not readable from public URL"
+          exit 1
