@@ -1,34 +1,47 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-theme="normal">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>LINE風トークビューア</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="viewer-header">
-    <h1>LINE風トークビューア</h1>
-    <label class="self-picker" for="selfSelector">
-      <span>自分：</span>
-      <select id="selfSelector" disabled>
-        <option value="">未読み込み</option>
-      </select>
-    </label>
-  </header>
-  <div class="file-controls">
-    <input type="file" id="fileInput" accept=".txt,.md" />
-    <div id="sourceStatus" class="source-status" data-state="idle" role="status" aria-live="polite">ファイル未選択</div>
-    <label class="chat-mode-picker" for="chatModeSelector">
-      <span>会話：</span>
-      <select id="chatModeSelector" aria-label="会話形式">
-        <option value="auto">自動</option>
-        <option value="direct">個チャ</option>
-        <option value="group">グループ</option>
-      </select>
-    </label>
+  <!-- Native-looking conversation shell. Only settings/import actually work:
+       source TXT contains no credentials, live chat connection or media. -->
+  <div class="app-shell" id="appShell">
+    <header class="conversation-header viewer-header">
+      <span class="chrome-icon back-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m15 3-9 9 9 9"/></svg></span>
+      <h1 id="conversationTitle">トーク履歴</h1>
+      <div class="header-icons" aria-hidden="true">
+        <span class="chrome-icon search-icon"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6"/></svg></span>
+        <span class="chrome-icon call-action"><svg viewBox="0 0 24 24"><path d="M5 2.8h3.6l1.2 4.5-2.3 2.1a15.5 15.5 0 0 0 7.1 7.1l2.1-2.3 4.5 1.2V19A2.3 2.3 0 0 1 18.9 21 16.9 16.9 0 0 1 3 5.1 2.3 2.3 0 0 1 5 2.8Z"/></svg></span>
+        <span class="chrome-icon calendar-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="1"/><path d="M7 2v5M17 2v5M3 9.5h18"/><path d="M9 13.5h6M9 16.5h6"/></svg></span>
+      </div>
+      <button class="chrome-icon menu-toggle" id="menuToggle" type="button" aria-label="設定を開く" aria-controls="settingsBackdrop" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18"/></svg></button>
+    </header>
+    <main id="chatContainer" role="log" aria-label="トーク履歴"></main>
+    <footer class="conversation-footer" aria-label="メッセージ入力欄の表示見本">
+      <span class="chrome-icon footer-plus" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/></svg></span>
+      <span class="chrome-icon footer-camera" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7h5l2-3h5l2 3h4v14H3z"/><circle cx="12" cy="14" r="4"/></svg></span>
+      <span class="chrome-icon footer-image" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="3.5" width="19" height="17" rx="1"/><path d="m4 18 6.5-6 4 3.5 3.5-4 3 3.5"/></svg></span>
+      <div class="compose-mock" aria-hidden="true"><span class="compose-placeholder">Aa</span><span class="compose-smile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M8 15c2.5 3 5.5 3 8 0"/></svg></span></div>
+      <span class="chrome-icon footer-mic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5.5 11v1a6.5 6.5 0 0 0 13 0v-1M12 18.5V22M8 22h8"/></svg></span>
+    </footer>
   </div>
-  <div id="chatContainer"></div>
+  <div class="settings-backdrop" id="settingsBackdrop" hidden>
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="settings-top"><h2 id="settingsTitle">表示設定</h2><button type="button" id="settingsClose" aria-label="設定を閉じる">×</button></div>
+      <label class="settings-field"><span>全体の拡大率 <output id="scaleOutput" for="scaleControl">120%</output></span><input id="scaleControl" type="range" min="80" max="160" step="10" value="120"></label>
+      <label class="settings-field"><span>着せ替え</span><select id="themeSelector"><option value="normal">通常</option><option value="black">ブラック</option><option value="white">ホワイト</option></select></label>
+      <div class="settings-divider"></div>
+      <label class="settings-field file-picker"><span>トーク履歴の読込（TXT / MD）</span><input type="file" id="fileInput" accept=".txt,.md"></label>
+      <div id="sourceStatus" class="source-status" data-state="idle" role="status" aria-live="polite">ファイル未選択</div>
+      <label class="self-picker settings-field" for="selfSelector"><span>自分：</span><select id="selfSelector" disabled><option value="">未読み込み</option></select></label>
+      <label class="chat-mode-picker settings-field" for="chatModeSelector"><span>会話形式：</span><select id="chatModeSelector" aria-label="会話形式"><option value="auto">自動</option><option value="direct">個チャ</option><option value="group">グループ</option></select></label>
+      <p class="settings-note">送信欄や通話ボタンは見た目の再現です。メッセージの送信・通話はできません。</p>
+    </section>
+  </div>
   <script src="script.js"></script>
 </body>
 </html>
