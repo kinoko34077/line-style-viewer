@@ -214,6 +214,67 @@ def main():
             page.wait_for_function("document.querySelector('#sourceStatus').dataset.state==='error'")
             assert project(page)["title"]=="制作中のトーク"
             page.click("#settingsClose")
+            # Audit: a date chip is visually shortened in the current year,
+            # but opening and closing inline editing must NOT erase the year.
+            original=project(page)
+            canonical=page.evaluate("() => new Date().getFullYear()+'/10/13(火)'")
+            auditDoc={**original,"items":[
+                {"id":"same-date-id","type":"date","side":"system","speaker":"",
+                 "content":canonical,"time":"","media":None,"previousType":"text","callKind":""}
+            ]}
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",auditDoc)
+            pill=page.locator(".centered-entry [data-edit-body]").first
+            assert pill.inner_text()=="10/13(火)"
+            pill.dblclick()
+            assert pill.inner_text()==canonical
+            pill.press("Tab")
+            assert project(page)["items"][0]["content"]==canonical, "doubletap/blur erased date year"
+            assert page.locator(".centered-entry [data-edit-body]").first.inner_text()=="10/13(火)"
+            # A changed short date retains the original year in stored data.
+            pill=page.locator(".centered-entry [data-edit-body]").first
+            pill.dblclick();pill.fill("9/20(日)");pill.press("Tab")
+            new_date=project(page)["items"][0]["content"]
+            assert new_date.endswith("/09/20(日)") and new_date[:4]==canonical[:4],new_date
+            # Center date dropped into own side becomes an ordinary text
+            # message, not an invisible side update while still centered.
+            page.evaluate("""() => {
+                const row=document.querySelector('.centered-entry'),target=row.querySelector('.edit-system');
+                const r=target.getBoundingClientRect(),c=document.querySelector('#chatContainer').getBoundingClientRect();
+                const x=r.x+r.width/2,y=r.y+r.height/2,dest=c.right-c.width*.10;
+                const fire=(type,px,py)=>target.dispatchEvent(new PointerEvent(type,{
+                    bubbles:true,pointerType:'mouse',pointerId:480,button:0,
+                    buttons:type==='pointerup'?0:1,clientX:px,clientY:py
+                }));
+                fire('pointerdown',x,y);fire('pointermove',dest,y+12);fire('pointerup',dest,y+12);
+            }""")
+            moved=project(page)["items"][0]
+            assert moved["side"]=="me" and moved["type"]=="text",moved
+            # Duplicate imported IDs must not make the second item edit/delete
+            # target the first. A malformed null item must reject atomically.
+            dupe={"version":1,"title":"重複ID検証","self":"自分","mode":"direct",
+                "scale":120,"theme":"normal",
+                "participants":[{"name":"自分","avatar":""},{"name":"相手","avatar":""}],
+                "items":[
+                    {"id":"dupe-id","type":"text","side":"me","speaker":"自分",
+                     "content":"一行目","time":"10:01"},
+                    {"id":"dupe-id","type":"text","side":"me","speaker":"自分",
+                     "content":"二行目","time":"10:02"}
+                ]}
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",dupe)
+            rows=project(page)["items"]
+            assert len(rows)==2 and rows[0]["id"]!=rows[1]["id"],rows
+            second=page.locator('[data-edit-body]').nth(1)
+            second.dblclick();second.fill("二行目だけ編集");second.press("Tab")
+            assert [i["content"] for i in project(page)["items"]]==["一行目","二行目だけ編集"]
+            assert page.evaluate("""() => {
+                const before=JSON.stringify(window.talkEditor.getProject());
+                try{
+                    const p=window.talkEditor.getProject();p.items=[null];
+                    window.talkEditor.replaceProject(p);
+                    return false;
+                }catch{return JSON.stringify(window.talkEditor.getProject())===before;}
+            }""")
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",original)
             assert not errors,errors
             assert page.evaluate("document.documentElement.scrollWidth<=window.innerWidth")
             if width==390:page.screenshot(path=str(OUT/"editor_390.png"))
