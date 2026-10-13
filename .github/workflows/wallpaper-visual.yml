@@ -1,0 +1,35 @@
+name: Verify LINE wallpaper and screenshot layout
+
+on:
+  pull_request:
+    paths:
+      - index.html
+      - script.js
+      - style.css
+      - tools/verify_wallpaper_browser.py
+      - .github/workflows/wallpaper-visual.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wallpaper-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install browser and screenshot libraries
+        run: |
+          python3 -m pip install --quiet pillow playwright
+          python3 -m playwright install chromium
+      - name: Real local browser import, scroll and stable sky verification
+        run: python3 tools/verify_wallpaper_browser.py
+      - name: Save synthetic viewer screenshots and measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-wallpaper-browser-evidence
+          path: visual-wallpaper-result/
+          retention-days: 7
+          if-no-files-found: warn

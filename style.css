@@ -1,14 +1,38 @@
 @import url('https://fonts.googleapis.com/css2?family=LINE+Seed+JP&display=swap');
 
+/* The wallpaper is tied to the VIEWPORT, not the potentially thousands
+   of lines tall chat document. Avoid background-attachment:fixed on body,
+   which is unreliable on mobile Safari and can appear as flat blue. */
+html {
+  background-color: #8cabd8;
+}
+
 body {
-  background: #8da9cd url('./default/bg-sky.jpg') no-repeat center center fixed;
-  background-size: cover;
+  background: transparent;
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
   /* Native device glyph metrics first; LINE Seed JP remains the fallback. */
   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Noto Sans JP', 'LINE Seed JP', sans-serif;
   color: #fff;
   margin: 0;
   padding: 20px;
   box-sizing: border-box;
+}
+
+/* Keep the ORIGINAL cloud artwork visible before AND after local TXT import,
+   including when the chat body becomes much taller than the screen. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: #8cabd8;
+  background-image: url('./default/bg-sky.jpg');
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 
@@ -123,6 +147,30 @@ body {
   margin: 9px 0;
 }
 
+.talk.you:has(.sender-name) {
+  margin-top: 23px;
+}
+
+/* Peer names occupy a small line ABOVE the balloon, as in the supplied
+   native screenshot. Absolute placement avoids widening the time gutter. */
+.sender-name {
+  position: absolute;
+  top: -17px;
+  left: 0;
+  right: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: #3b4c65;
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 500;
+  text-align: left;
+}
+
+.talk.you:has(.sender-name) .icon {
+  transform: translateY(-17px);
+}
+
 .talk.you {
   justify-content: flex-start;
 }
@@ -167,6 +215,7 @@ body {
 
 .message-block-with-meta {
   display: flex;
+  position: relative;
   align-items: flex-end;
   gap: 5px;
   min-width: 0;
@@ -201,7 +250,7 @@ body {
 
 .talk.me .balloon {
   border-radius: 18px;
-  background: #a1e96c;
+  background: #6de67b;
   color: #1e2818;
 }
 
@@ -265,7 +314,7 @@ body {
 
 .talk.me .balloon::after {
   right: -8px;
-  background: #a1e96c;
+  background: #6de67b;
   clip-path: path("M20 0 C16 6 11 7 6 5 L0 5 L0 22 L12 22 C11 14 15 6 20 0 Z");
 }
 
@@ -438,12 +487,20 @@ body {
   padding: 4px 11px;
   text-align: center;
   border-radius: 999px;
-  background: rgba(56, 75, 105, 0.51);
+  background: rgba(56, 75, 105, 0.27);
   color: #fff;
   font-size: 11.5px;
   line-height: 1.3;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Date pill dimensions/color sampled from the attached 390px native screenshot.
+   The label is compact, but retains a finger-readable neutral chip. */
+.date-label {
+  font-size: 9px;
+  line-height: 1.4;
+  padding: 6px 7px;
 }
 
 .system {
@@ -465,24 +522,41 @@ body {
   }
 
   .talk {
-    gap: 3px;
+    gap: 8px;
     margin: 8px 0;
   }
 
   .talk .icon,
   .talk .icon-spacer {
-    flex-basis: 34px;
-    width: 34px;
-    height: 34px;
-    margin-right: 3px;
+    flex-basis: 28px;
+    width: 28px;
+    height: 28px;
+    margin-right: 0;
   }
 
-  /* Calibrated with identical eight-character native LINE messages:
-     source photo bubble 425x101 at 2.5x screen scale ~= 170x40 logical px. */
+  .talk.you:has(.sender-name) {
+    margin-top: 24px;
+  }
+
+  .talk.you:has(.sender-name) .icon {
+    transform: translateY(-17px);
+  }
+
+  /* User-provided iPhone screenshot (390 CSS px): compact short received
+     pill ~56x35, 11-char sent bubble ~165x35. Preserve 2021 measurements
+     in the reference notes rather than overfitting one historical font size. */
   .balloon {
-    font-size: 17px;
-    line-height: 1.3;
-    padding: 9px 15px;
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 8px 12px;
+  }
+
+  .talk .balloon:not(:has(img, video, .call-card, .file-card)) {
+    min-width: 56px;
+  }
+
+  .talk .message-block-with-meta {
+    gap: 4px;
   }
 
   .source-status {
