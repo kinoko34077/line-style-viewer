@@ -111,6 +111,8 @@ body {
   margin: 0 4px 2px 0;
   border-radius: 50%;
   object-fit: cover;
+  align-self: flex-start;
+  margin-top: 2px;
   background: #eef0f4;
 }
 
@@ -224,20 +226,83 @@ body {
 }
 
 .media-placeholder {
-  display: block;
-  width: 180px;
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 148px;
   max-width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
   overflow: hidden;
   border-radius: 10px;
-  background: rgba(25, 30, 36, 0.68);
+  background: #eee;
 }
 
 .media-placeholder img {
   display: block;
-  width: 100%;
-  height: auto;
-  max-height: 175px;
+  width: 124px;
+  height: 124px;
+  max-width: 100%;
   object-fit: contain;
+}
+
+/* default-stamp.png is a 256px exclamation symbol, not a full-size sticker.
+   Present only a small status pictogram, centered with bounded spacing. */
+.balloon .stamp-fallback {
+  display: block;
+  width: 52px;
+  height: 52px;
+  max-width: 52px;
+  object-fit: contain;
+  margin: 8px;
+}
+
+/* Call history is a speaker-sided LINE bubble, not a center system pill.
+   A compact phone glyph keeps missed/declined/time events visually distinct. */
+.balloon:has(.call-card) {
+  padding: 0;
+  max-width: 100%;
+}
+
+.call-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 224px;
+  min-width: 112px;
+  min-height: 54px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.call-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(120, 130, 140, 0.13);
+  color: #555e68;
+}
+
+.talk.me .call-icon {
+  background: rgba(57, 125, 55, 0.14);
+  color: #335d2b;
+}
+
+.call-icon svg {
+  display: block;
+  width: 19px;
+  height: 19px;
+}
+
+.call-label {
+  overflow-wrap: break-word;
+  min-width: 0;
+  font-weight: 600;
 }
 
 /* Text exports contain neither the file name nor the underlying bytes.
