@@ -412,3 +412,144 @@ test('inferred sender identity is used for outgoing rendering without editing so
   assert.equal((output.match(/class="system"/g) || []).length, 0);
   assert.equal(input.includes('10:01\t\tsecond'), true);
 });
+
+
+test('quoted whole LINE row with multiline text keeps time and sender as a message', () => {
+  const parser = loadParser();
+  const raw = [
+    '2026/10/13(火)',
+    '"12:34\t花子\t一行目',
+    '二行目',
+    '三行目"',
+    '"12:35\t太郎\t一行だけ"',
+    '12:36\t\t続きの発言'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(raw));
+  assert.deepEqual(Array.from(parsed.items.filter(x => x.type !== 'date'), x => [x.type, x.name, x.time, x.content]), [
+    ['text', '花子', '12:34', '一行目\n二行目\n三行目'],
+    ['text', '太郎', '12:35', '一行だけ'],
+    ['text', '太郎', '12:36', '続きの発言']
+  ]);
+  parsed.meta.user='花子';
+  parser.renderChat(parsed);
+  const html=parser.document.getElementById('chatContainer').innerHTML;
+  assert.match(html,/class="talk me"[\s\S]*?一行目<br>二行目<br>三行目/);
+  assert.doesNotMatch(html,/class="system">.*12:34/);
+  assert.equal((html.match(/class="system"/g)||[]).length,0);
+  assert.equal((html.match(/<br>/g)||[]).length,2);
+});
+
+test('ordinary LINE-export body-quoted multiline and embedded header remain one message', () => {
+  const parser=loadParser();
+  const raw=[
+    '[LINE] 相手とのトーク履歴',
+    '保存日時：2026/10/13 19:00',
+    '2026/10/13(火)',
+    '19:01\tA\t"最初',
+    '[LINE] 内部で引用された文字列とのトーク履歴',
+    '保存日時：2099/01/01 00:00',
+    '結び"',
+    '19:02\tB\t後続'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(raw));
+  const messages=parsed.items.filter(x=>x.type!=='date');
+  assert.equal(messages.length,2);
+  assert.equal(messages[0].name,'A');
+  assert.match(messages[0].content,/\[LINE\] 内部で引用された文字列/);
+  assert.match(messages[0].content,/保存日時：2099/);
+  assert.equal(messages[1].name,'B');
+  assert.equal(messages[1].content,'後続');
+});
+
+test('native two-column LINE unsend notice is system; unknown two-column content is not', () => {
+  const parser=loadParser();
+  const raw=[
+    '2026/10/13(火)',
+    '10:00\tA\t通常の発言',
+    '10:01\tメッセージの送信を取り消しました',
+    '10:02\tA\t次の発言',
+    '10:03\t正体不明の文字列',
+    '10:04\tA\tその次'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(raw));
+  assert.deepEqual(Array.from(parsed.items.filter(x=>x.type!=='date'),x=>[x.type,x.name,x.time,x.content]),[
+    ['text','A','10:00','通常の発言'],
+    ['system','','10:01','メッセージの送信を取り消しました'],
+    ['text','A','10:02','次の発言'],
+    ['text','A','10:03','正体不明の文字列'],
+    ['text','A','10:04','その次']
+  ]);
+  parser.renderChat(parsed);
+  const html=parser.document.getElementById('chatContainer').innerHTML;
+  assert.equal((html.match(/class="system"/g)||[]).length,1);
+  assert.match(html,/class="system">メッセージの送信を取り消しました/);
+});
+
+test('unknown orphan with timestamp-looking source is never silently a system notice', () => {
+  const parser=loadParser();
+  const raw=[
+    '11:00\tA\t最初',
+    '11:01 A 誤ってタブが消えた',
+    '11:02\tB\t後続'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(raw));
+  assert.deepEqual(Array.from(parsed.items,x=>x.type),['text','text','text']);
+  assert.equal(parsed.items[1].content,'11:01 A 誤ってタブが消えた');
+  assert.equal(parsed.items[1].name,'A');
+});
+
+test('quoted whole-row HTML remains escaped and does not become a system entry', () => {
+  const parser=loadParser();
+  const raw=[
+    '"09:30\t<script>alert(1)</script>\t<svg onload=alert(1)>',
+    '普通の2行目"'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(raw));
+  assert.equal(parsed.items.length,1);
+  assert.equal(parsed.items[0].type,'text');
+  assert.equal(parsed.items[0].time,'09:30');
+  parser.renderChat(parsed);
+  const html=parser.document.getElementById('chatContainer').innerHTML;
+  assert.doesNotMatch(html,/<svg onload=alert/);
+  assert.match(html,/&lt;svg onload=alert\(1\)&gt;<br>/);
+});
+
+test('malformed whole-row quote recovers at the next valid record and day', () => {
+  const parser=loadParser();
+  const raw=[
+    '"08:00\tA\t未閉じの引用',
+    '08:01\tB\t次の発言',
+    '2026/10/14(水)',
+    '09:00\tA\t次の日'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(raw));
+  const msgs=parsed.items.filter(x=>x.type!=='date');
+  assert.deepEqual(Array.from(msgs,x=>[x.type,x.name,x.content]),[
+    ['text','A','未閉じの引用'],
+    ['text','B','次の発言'],
+    ['text','A','次の日']
+  ]);
+  assert.equal(parsed.items.filter(x=>x.type==='date').length,1);
+});
+
+test('quoted whole-row snapshots deduplicate by logical sender/time/content', () => {
+  const parser=loadParser();
+  const raw=[
+    '[LINE] Bとのトーク履歴',
+    '2026/10/13(火)',
+    '"11:00\tA\t一行目',
+    '二行目"',
+    '[LINE] Bとのトーク履歴',
+    '2026/10/13(火)',
+    '11:00\tA\t"一行目',
+    '二行目"',
+    '11:01\tB\t次'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(raw));
+  const msgs=parsed.items.filter(x=>x.type!=='date');
+  // The normalized messages should share the same logical body even if the
+  // exports quoted a full row versus only its content.
+  assert.equal(msgs.length,2);
+  assert.equal(msgs[0].content,'一行目\n二行目');
+  assert.equal(msgs[1].content,'次');
+});
