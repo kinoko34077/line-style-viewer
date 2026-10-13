@@ -3,7 +3,8 @@
 body {
   background: #8da9cd url('./default/bg-sky.jpg') no-repeat center center fixed;
   background-size: cover;
-  font-family: 'LINE Seed JP', -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', sans-serif;
+  /* Native device glyph metrics first; LINE Seed JP remains the fallback. */
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Noto Sans JP', 'LINE Seed JP', sans-serif;
   color: #fff;
   margin: 0;
   padding: 20px;
@@ -140,6 +141,32 @@ body {
   align-self: flex-start;
   margin-top: 1px;
   background: #eef0f4;
+}
+
+/* For same-sender messages within the same minute, the native chat UI
+   keeps the message indentation but does not repeat the profile image. */
+.talk .icon-spacer {
+  display: block;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  margin: 0 4px 0 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* Subsequent messages in a native LINE run have a pill edge rather than
+   another speech horn and sit noticeably closer to the first bubble. */
+.talk[data-continuation="true"] {
+  margin-top: -5px;
+}
+
+.talk[data-continuation="true"] .balloon {
+  border-radius: 18px;
+}
+
+.talk[data-continuation="true"] .balloon::after {
+  display: none;
 }
 
 .message-block-with-meta {
@@ -434,7 +461,8 @@ body {
     margin: 8px 0;
   }
 
-  .talk .icon {
+  .talk .icon,
+  .talk .icon-spacer {
     flex-basis: 34px;
     width: 34px;
     height: 34px;
