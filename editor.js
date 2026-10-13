@@ -11,7 +11,7 @@ let doc=blank(),history=[],future=[],timer,dbCounter=0,loaded=false,touched=fals
 // Keep repeated edits to large inline photos from multiplying memory without bound.
 function trimStack(stack){while(stack.length>1 && (stack.length>40 || stack.reduce((n,s)=>n+s.length,0)>32*1024*1024))stack.shift();}
 const snapshot=()=>JSON.stringify(doc);
-const allowedMedia=/^data:(?:image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|audio\/(?:mpeg|ogg|wav));base64,/;
+const allowedMedia=/^data:(?:image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|application\/octet-stream|audio\/(?:mpeg|ogg|wav));base64,/;
 function sanitize(input){
  if(!input || input.version!==1 || !Array.isArray(input.items)||!Array.isArray(input.participants))throw Error('プロジェクト形式が不正です');
  if(input.items.length>25000)throw Error('メッセージ数が上限を超えています');
@@ -176,7 +176,7 @@ function exportJson(){
 }
 async function importJson(file){
  if(!file)return;
- try{const text=await file.text();if(text.length>24*1024*1024)throw Error('ファイルサイズ超過');
+ try{const text=await file.text();if(text.length>120*1024*1024)throw Error('ファイルサイズ超過');
   const parsed=sanitize(JSON.parse(text));
   mutate(()=>{doc=parsed;});status('保存したトークを読み込みました');
  }catch(e){status('読み込み失敗: '+e.message,true);}
@@ -249,14 +249,18 @@ on('inlineMediaInput','change',async e=>{
  if(!file||!target)return;
  if(file.size>15*1024*1024){status('15MB以下のファイルを指定してください',true);return;}
  const mime=file.type||'application/zip';
- if(!mimeAllowed.test(mime) || target.personIndex!==null&&!mime.startsWith('image/')){status('対応していないファイル形式です',true);return;}
+ if(target.personIndex!==null&&!/^image\/(?:png|jpeg|gif|webp)$/.test(mime)){status('アイコンはPNG/JPEG/GIF/WebPの画像のみ指定できます',true);return;}
  try{
-  const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>rej(r.error);r.readAsDataURL(file);});
+  let data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>rej(r.error);r.readAsDataURL(file);});
+  // Unknown document types remain local generic downloads, never executable
+  // image or HTML document previews through a data URL.
+  const safeMime=mimeAllowed.test(mime)?mime:'application/octet-stream';
+  if(safeMime==='application/octet-stream')data=data.replace(/^data:[^,]*/, 'data:application/octet-stream;base64');
   mutate(d=>{
    if(target.personIndex!==null){if(d.participants[target.personIndex])d.participants[target.personIndex].avatar=data;}
    else{const it=d.items.find(x=>x.id===target.itemId);if(it){
-    it.media={data,mime,name:file.name};it.type='attachment';
-    it.content=mime.startsWith('image/')?'[写真]':mime.startsWith('video/')?'[動画]':'[ファイル]';
+    it.media={data,mime:safeMime,name:file.name};it.type='attachment';
+    it.content=safeMime.startsWith('image/')?'[写真]':safeMime.startsWith('video/')?'[動画]':'[ファイル]';
    }}
   });status('ローカル素材を割り当てました');
  }catch(err){status('素材読込に失敗: '+err.message,true);}
