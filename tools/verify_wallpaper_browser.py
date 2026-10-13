@@ -39,9 +39,10 @@ def run():
             page.goto((ROOT/"index.html").as_uri(),wait_until="domcontentloaded")
             page.wait_for_selector("#menuToggle")
             assert page.locator("#settingsBackdrop").is_hidden()
-            assert page.locator("#conversationTitle").inner_text()=="トーク履歴"
+            assert page.locator("#conversationTitle").inner_text()=="トーク"
             image_before=Image.open(BytesIO(page.screenshot()))
             page.click("#menuToggle")
+            page.click('[data-toggle-section="editorSettings"]')
             page.locator("#fileInput").wait_for(state="visible")
             styles=page.evaluate("""() => {
                 const p=getComputedStyle(document.body,'::before');
@@ -130,8 +131,8 @@ def run():
                 raise AssertionError("header overlaps transcript")
             if footer["y"] + footer["height"] > 845:
                 raise AssertionError("footer exceeds viewport")
-            if page.locator(".conversation-footer input").count():
-                raise AssertionError("mock composer must not send messages")
+            if page.locator(".conversation-footer textarea#composeInput").count()!=1:
+                raise AssertionError("new project composer is not a real textarea")
             if width<=600 and (abs(ar["width"]-28*1.2)>1 or abs(ar["height"]-28*1.2)>1):
                 raise AssertionError(f"avatar size not screenshot-calibrated: {ar}")
             row_count=page.locator(".talk").count()
