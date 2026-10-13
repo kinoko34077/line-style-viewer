@@ -140,6 +140,10 @@ def run():
             before,after,mid,bottom=map(sky_edge,[image_before,image_after,image_mid,image_bottom])
             d=[round(diff(before,arr),4) for arr in [after,mid,bottom]]
             if max(d)>0.5:
+                image_before.save(OUT/f"sky_before_{width}.png")
+                image_after.save(OUT/f"sky_after_{width}.png")
+                print("SKY_MISMATCH_SAMPLES",{"before":before[:5],"after":after[:5],
+                    "mid":mid[:5],"bottom":bottom[:5]},flush=True)
                 raise AssertionError(f"Viewport wallpaper changed while loading or scrolling: {width}, {d}")
             if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
                 raise AssertionError(f"horizontal scroll after import at {width}")
