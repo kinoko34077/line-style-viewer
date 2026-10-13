@@ -592,3 +592,334 @@ body::before {
     flex-basis: 100%;
   }
 }
+
+
+/* 2026-10-13 conversation chrome, proportional scale and three LINE-inspired
+   themes. The original normal-theme cloud asset stays untouched. */
+:root {
+  --ui-scale: 1.2;
+  --shell-ink: #101923;
+  --shell-footer: #fff;
+  --shell-footer-border: #e7e9ec;
+  --compose-background: #f7f7f8;
+  --compose-border: #e5e6e8;
+  --compose-icon: #2a2e32;
+  --bubble-in: #fff;
+  --bubble-out: #6de67b;
+  --bubble-in-text: #24272a;
+  --bubble-out-text: #1e2818;
+  --metadata-color: #3e526d;
+  --sender-color: #3b4c65;
+  --service-bg: rgba(56,75,105,.27);
+  --service-text: #fff;
+}
+
+html[data-theme="black"] {
+  background: #14161a;
+  --shell-ink: #f1f2f5;
+  --shell-footer: #1e2024;
+  --shell-footer-border: #34373c;
+  --compose-background: #2c2e33;
+  --compose-border: #42454b;
+  --compose-icon: #f1f1f3;
+  --bubble-in: #353840;
+  --bubble-out: #386d4a;
+  --bubble-in-text: #f5f5f7;
+  --bubble-out-text: #f5f7f5;
+  --metadata-color: #c0c8d4;
+  --sender-color: #c3cbd6;
+  --service-bg: rgba(108,115,128,.54);
+  --service-text: #f1f2f5;
+}
+html[data-theme="white"] {
+  background: #f8f9fb;
+  --shell-ink: #171c22;
+  --shell-footer: #fff;
+  --shell-footer-border: #e8e9ec;
+  --compose-background: #f3f4f6;
+  --compose-border: #e0e3e7;
+  --compose-icon: #2a2e32;
+  --bubble-in: #fff;
+  --bubble-out: #d7f3d3;
+  --bubble-in-text: #22272c;
+  --bubble-out-text: #1b301a;
+  --metadata-color: #687684;
+  --sender-color: #536170;
+  --service-bg: rgba(117,132,150,.24);
+  --service-text: #34404c;
+}
+html[data-theme="black"] body::before {
+  background-color: #171a20;
+  background-image: none;
+}
+html[data-theme="white"] body::before {
+  background-color: #f2f4f7;
+  background-image: none;
+}
+
+body {
+  padding: 0;
+  overflow: hidden;
+  color: var(--shell-ink);
+}
+.app-shell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: calc(100dvh / var(--ui-scale));
+  min-height: 0;
+  zoom: var(--ui-scale);
+}
+.viewer-header.conversation-header {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 9px;
+  min-height: 54px;
+  margin: 0;
+  padding: 5px 10px;
+  box-sizing: border-box;
+  color: var(--shell-ink);
+  background: transparent;
+}
+.viewer-header.conversation-header h1 {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  max-height: 3.75em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.header-icons {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+.chrome-icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 26px;
+  height: 30px;
+  color: var(--shell-ink);
+}
+.chrome-icon svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.back-icon {
+  width: 24px;
+}
+.menu-toggle {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.menu-toggle:focus-visible,
+#settingsClose:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+#chatContainer {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 600px;
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  margin: 0 auto;
+  padding: 10px 8px 20px;
+}
+.conversation-footer {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-height: 61px;
+  width: 100%;
+  gap: 9px;
+  padding: 8px 9px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--shell-footer-border);
+  background: var(--shell-footer);
+  color: var(--compose-icon);
+}
+.conversation-footer .chrome-icon {
+  color: var(--compose-icon);
+  width: 26px;
+}
+.conversation-footer .chrome-icon svg {
+  width: 24px;
+  height: 24px;
+}
+.compose-mock {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid var(--compose-border);
+  border-radius: 999px;
+  padding: 4px 8px 4px 14px;
+  background: var(--compose-background);
+  color: #a0a3a7;
+  font-size: 17px;
+}
+.compose-placeholder { flex: 1 1 auto; }
+.compose-smile {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  color: #81858a;
+}
+.compose-smile svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0,0,0,.48);
+  box-sizing: border-box;
+}
+.settings-backdrop[hidden] { display: none; }
+.settings-panel {
+  box-sizing: border-box;
+  width: min(100%, 410px);
+  max-height: min(90dvh, 780px);
+  overflow-y: auto;
+  padding: 17px;
+  border-radius: 17px;
+  background: #f8f9fa;
+  color: #20272e;
+  box-shadow: 0 10px 50px rgba(0,0,0,.25);
+}
+html[data-theme="black"] .settings-panel {
+  background: #25282e;
+  color: #f1f2f5;
+}
+.settings-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.settings-top h2 { font-size: 19px; margin: 0; }
+#settingsClose {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 31px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 8px;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  gap: 7px;
+  margin: 11px 0;
+  box-sizing: border-box;
+  font-size: 14px;
+  white-space: normal;
+}
+.settings-field > span:first-child { font-weight: 600; }
+.settings-field output { float: right; font-variant-numeric: tabular-nums; }
+.settings-field select,
+.settings-field input[type=file] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #b7bfc8;
+  border-radius: 9px;
+  padding: 10px;
+}
+.settings-field input[type=range] { width: 100%; accent-color: #06c755; }
+.settings-panel .source-status {
+  width: 100%;
+  max-width: 100%;
+  background: rgba(104,123,145,.13);
+  color: inherit;
+  margin: 9px 0;
+}
+.settings-panel .source-status[data-state=ready] { color: inherit; }
+.settings-divider { height: 1px; margin: 16px 0; background: #ccd2d8; }
+.settings-note {
+  margin: 13px 0 0;
+  color: #606f7b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+html[data-theme="black"] .settings-note { color: #bec6d1; }
+
+/* Entire transcript (including shapes and real asset placeholders) changes
+   palette while preserving the original message structure and alignment. */
+.balloon { background: var(--bubble-in); color: var(--bubble-in-text); }
+.talk.me .balloon { background: var(--bubble-out); color: var(--bubble-out-text); }
+.talk.you .balloon::after { background: var(--bubble-in); }
+.talk.me .balloon::after { background: var(--bubble-out); }
+.sender-name { color: var(--sender-color); }
+.meta-inline { color: var(--metadata-color); }
+.date-label, .system { color: var(--service-text); background: var(--service-bg); }
+html[data-theme="black"] .file-card { background: #343840; color: #f2f4f5; }
+html[data-theme="black"] .call-duration,
+html[data-theme="black"] .talk.me .call-duration { color: #e3e8ee; }
+html[data-theme="black"] .call-icon { color: #f1f2f4; }
+
+@media (max-width: 600px) {
+  body { padding: 0; }
+  .viewer-header.conversation-header {
+    min-height: 54px;
+    gap: 7px;
+    padding: 5px 9px;
+  }
+  .header-icons { gap: 5px; }
+  .viewer-header.conversation-header h1 { font-size: 16px; }
+  #chatContainer { padding: 8px 8px 18px; }
+  .conversation-footer { gap: 6px; padding-left: 7px; padding-right: 7px; }
+  .conversation-footer .chrome-icon { width: 23px; }
+  .conversation-footer .chrome-icon svg { width: 23px; height: 23px; }
+}
+@media (max-width: 350px) {
+  .calendar-icon { display: none; }
+  .header-icons { gap: 3px; }
+  .conversation-footer { gap: 4px; }
+}
