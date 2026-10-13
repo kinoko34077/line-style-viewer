@@ -63,7 +63,7 @@ test('sent, received, date, system and multiline contents coexist; user text sta
   ];
   const out = render(items);
   assert.equal(out.writes, 1);
-  assert.match(out.markup, /class="date-label">2026\/10\/13\(火\)/);
+  assert.match(out.markup, /class="date-label">2026年10月13日\(火\)/);
   assert.match(out.markup, /first<br>second/);
   assert.match(out.markup, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(out.markup, /<script>alert\(1\)<\/script>/);
@@ -81,7 +81,7 @@ test('outgoing outer row is flush right and inner order is flipped; incoming is 
 
 test('standard bubbles, tails, avatar sizes and mobile fit are styled on their own sides', () => {
   assert.match(css, /\.balloon\s*\{[^}]*background:\s*#fff;/);
-  assert.match(css, /\.talk\.me\s+\.balloon\s*\{[^}]*background:\s*#a1e96c;/);
+  assert.match(css, /\.talk\.me\s+\.balloon\s*\{[^}]*background:\s*#6de67b;/);
   assert.match(css, /\.talk\s+\.icon\s*\{[^}]*border-radius:\s*50%;/);
   assert.match(css, /\.talk\.you\s+\.balloon::after\s*\{[^}]*left:\s*-8px;/);
   assert.match(css, /\.talk\.me\s+\.balloon::after\s*\{[^}]*right:\s*-8px;/);
@@ -219,7 +219,7 @@ test('message scale and read/time location remain consistent with native LINE re
   assert.match(css, /\.balloon\s*\{[^}]*line-height:\s*1\.42;[^}]*font-size:\s*15px;/);
   assert.match(css, /\.meta-inline\s*\{[^}]*font-size:\s*10px;/);
   assert.match(css, /\.date-label,[\s\S]*?\.system\s*\{[^}]*border-radius:\s*999px;/);
-  assert.match(css, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.balloon\s*\{[^}]*font-size:\s*17px;[^}]*line-height:\s*1\.3;[^}]*padding:\s*9px 15px;/);
+  assert.match(css, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.balloon\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.4;[^}]*padding:\s*8px 12px;/);
   assert.match(css, /\.call-copy\s*\{[^}]*flex-direction:\s*column;/);
   assert.match(css, /\.call-duration\s*\{[^}]*font-size:\s*12px;/);
 });
@@ -287,7 +287,7 @@ test('independent native LINE grouping geometry preserves avatar lane and rounde
   assert.match(css,/\.talk\[data-continuation="true"\] \.balloon\s*\{[^}]*border-radius:\s*18px;/);
   assert.match(css,/\.talk\.me\[data-continuation="true"\] \.balloon\s*\{[^}]*border-radius:\s*18px;/);
   assert.match(css,/\.talk\[data-continuation="true"\] \.balloon::after\s*\{[^}]*display:\s*none;/);
-  assert.match(css,/@media\s*\(max-width:\s*600px\)[\s\S]*\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*flex-basis:\s*34px;/);
+  assert.match(css,/@media\s*\(max-width:\s*600px\)[\s\S]*\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*flex-basis:\s*24px;/);
   assert.match(css,/font-family:\s*-apple-system,\s*BlinkMacSystemFont,\s*'Hiragino Kaku Gothic ProN'/);
 });
 
@@ -323,5 +323,53 @@ test('mobile text dimensions are explicitly calibrated from a matching native LI
   // CSS-equivalent pixels after normalizing the image's actual 2.5x scale.
   const mobile=css.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*)\}\s*$/);
   assert.ok(mobile);
-  assert.match(mobile[1],/\.balloon\s*\{[^}]*font-size:\s*17px;[^}]*line-height:\s*1\.3;[^}]*padding:\s*9px 15px;/);
+  assert.match(mobile[1],/\.balloon\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.4;[^}]*padding:\s*8px 12px;/);
+});
+
+
+test('viewport cloud wallpaper remains a fixed layer, not body-attachment dependent', () => {
+  assert.match(css,/html\s*\{[^}]*background-color:\s*#8cabd8;/);
+  assert.match(css,/body\s*\{[^}]*background:\s*transparent;[^}]*isolation:\s*isolate;/);
+  assert.match(css,/body::before\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*background-image:\s*url\('\.\/default\/bg-sky\.jpg'\);[^}]*background-size:\s*cover;/);
+  assert.doesNotMatch(css,/background-attachment:\s*fixed/);
+});
+
+test('incoming first bubble has a safe name above it; continuation suppresses repeated labels', () => {
+  const markup=render([
+    {type:'text',name:'B',time:'12:00',content:'初回'},
+    {type:'text',name:'B',time:'12:00',content:'連投'},
+    {type:'text',name:'B',time:'12:01',content:'次の分'},
+    {type:'text',name:'A',time:'12:02',content:'自分'}
+  ]).markup;
+  assert.equal((markup.match(/class="sender-name"/g)||[]).length,2);
+  assert.match(markup, /class="sender-name">B<\/span>/);
+  assert.match(markup,/class="talk you" data-continuation="true"/);
+  assert.doesNotMatch(markup,/class="talk me">[\s\S]{0,100}sender-name/);
+  assert.match(css,/\.sender-name\s*\{[^}]*position:\s*absolute;[^}]*top:\s*-17px;/);
+});
+
+test('sender name text is escaped and a genuinely unknown sender is not invented', () => {
+  const markup=render([
+    {type:'text',name:'<img src=x onerror=alert(1)>',time:'13:00',content:'大丈夫'},
+    {type:'text',name:'',time:'13:01',content:'不明'}
+  ]).markup;
+  assert.match(markup,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(markup,/<img src=x onerror/);
+  assert.equal((markup.match(/class="sender-name"/g)||[]).length,1);
+});
+
+test('Japanese date display changes only the rendered chip, not the source item', () => {
+  const raw={type:'date',content:'2025/10/04(土)'};
+  const out=render([raw]).markup;
+  assert.match(out,/2025年10月4日\(土\)/);
+  assert.equal(raw.content,'2025/10/04(土)');
+});
+
+test('mobile iPhone reference uses 24px avatars, compact 13px chat text and 2025 green', () => {
+  const mobile=(css.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*)\}\s*$/)||[])[1];
+  assert.ok(mobile);
+  assert.match(mobile,/\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*width:\s*24px;/);
+  assert.match(mobile,/\.balloon\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.4;[^}]*padding:\s*8px 12px;/);
+  assert.match(mobile,/min-width:\s*56px;/);
+  assert.match(css,/\.talk\.me \.balloon\s*\{[^}]*background:\s*#6de67b;/);
 });
