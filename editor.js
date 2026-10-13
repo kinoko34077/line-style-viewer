@@ -23,13 +23,18 @@ function sanitize(input){
  d.mode=['auto','direct','group'].includes(input.mode)?input.mode:'auto';
  d.theme=['normal','white','black'].includes(input.theme)?input.theme:'normal';
  d.scale=Math.min(160,Math.max(80,Number(input.scale)||120));
- d.participants=input.participants.slice(0,150).map(p=>({name:String(p.name||'').slice(0,100),
-   avatar:typeof p.avatar==='string'&&allowedMedia.test(p.avatar)&&p.avatar.startsWith('data:image/')?p.avatar:''})).filter(p=>p.name);
+ d.participants=input.participants.slice(0,150).map(p=>{if(!p||typeof p!=='object')throw Error('話者の形式が不正です');return {name:String(p.name||'').slice(0,100),
+   avatar:typeof p.avatar==='string'&&allowedMedia.test(p.avatar)&&p.avatar.startsWith('data:image/')?p.avatar:''};}).filter(p=>p.name);
  if(!d.participants.some(p=>p.name===d.self))d.participants.unshift({name:d.self,avatar:''});
+ const seenIds=new Set();
  d.items=input.items.map(it=>{
+   if(!it||typeof it!=='object'||Array.isArray(it))throw Error('メッセージの形式が不正です');
+   let id=typeof it.id==='string'&&/^[\w-]{3,100}$/.test(it.id)?it.id:identifier();
+   while(seenIds.has(id))id=identifier();
+   seenIds.add(id);
    const type=['text','attachment','date','system','call'].includes(it.type)?it.type:'text';
    const media=it.media&&allowedMedia.test(it.media.data||'')?{data:it.media.data,mime:String(it.media.mime||''),name:String(it.media.name||'ファイル').slice(0,180)}:null;
-   return {id:typeof it.id==='string'&&/^[\w-]{3,100}$/.test(it.id)?it.id:identifier(),
+   return {id,
     type,side:['me','you','system'].includes(it.side)?it.side:'you',
     speaker:String(it.speaker??it.name??'').slice(0,100),time:String(it.time||'').slice(0,50),
     content:String(it.content||'').slice(0,200000),media,callKind:String(it.callKind||''),previousType:String(it.previousType||'text')};
@@ -311,7 +316,15 @@ function readEdit(el){return el.hasAttribute('data-edit-body')?el.innerText.repl
 function flush(el,withoutRender=false){
  if(!editorNode(el))return;
  const id=el.dataset.editBody||el.dataset.editTime,field=el.hasAttribute('data-edit-body')?'content':'time';
- const it=itemById(id),v=readEdit(el);
+ const it=itemById(id);
+ let v=readEdit(el);
+ if(it?.type==='date'&&field==='content'){
+   const short=/^(\d{1,2})\/(\d{1,2})(\([^)]*\))?$/.exec(v.trim());
+   if(short){
+     const oldYear=/^(\d{4})\//.exec(it.content)?.[1]||new Date().getFullYear();
+     v=`${oldYear}/${String(Number(short[1])).padStart(2,'0')}/${String(Number(short[2])).padStart(2,'0')}${short[3]||''}`;
+   }
+ }
  if(it&&it[field]!==v)mutate(d=>{const x=d.items.find(i=>i.id===id);if(x)x[field]=v;},{noRender:withoutRender});
 }
 transcript.addEventListener('focusin',e=>{if(editorNode(e.target))focusStart.set(e.target,readEdit(e.target));});
@@ -321,6 +334,8 @@ transcript.addEventListener('focusout',e=>{
  if(editorNode(el)){
    flush(el);
    if(el.isConnected && el.hasAttribute('data-edit-body')){
+     const item=itemById(el.dataset.editBody);
+     if(item?.type==='date')el.textContent=displayDateLabel(item.content);
      el.contentEditable='false';el.removeAttribute('tabindex');
    }else if(el.isConnected && el.hasAttribute('data-edit-time')){
      el.readOnly=true;el.tabIndex=-1;
@@ -342,9 +357,14 @@ transcript.addEventListener('paste',e=>{
  const n=document.createTextNode(t);r.insertNode(n);r.setStartAfter(n);r.collapse(true);sel.removeAllRanges();sel.addRange(r);}}
 });
 function selectEntry(id) {
+ if(selectedEntryId===id)return;
+ const previous=transcript.querySelector('.editable-entry.is-selected');
+ if(previous)previous.classList.remove('is-selected');
  selectedEntryId=id;
- for(const row of transcript.querySelectorAll('[data-entry-id]'))
-  row.classList.toggle('is-selected',row.dataset.entryId===id);
+ if(id){
+  const next=transcript.querySelector(`[data-entry-id="${CSS.escape(id)}"]`);
+  if(next)next.classList.add('is-selected');
+ }
 }
 function enableInline(target,row){
  if(!row)return;
@@ -353,6 +373,10 @@ function enableInline(target,row){
  if(!node)return;
  selectEntry(row.dataset.entryId);
  if(node.hasAttribute('data-edit-body')){
+   const item=itemById(row.dataset.entryId);
+   // Show the canonical full year only while editing. Double-tapping and
+   // blurring an unchanged current-year date must never strip its year.
+   if(item?.type==='date')node.textContent=item.content;
    node.contentEditable='true';
    node.tabIndex=0;
  }else{
@@ -490,6 +514,7 @@ transcript.addEventListener('pointerup',e=>{
    it.side='system';it.speaker='';
   }else{
    if(it.type==='system')it.type=['text','attachment','call'].includes(it.previousType)?it.previousType:'text';
+   if(it.type==='date')it.type='text';
    const oldSide=it.side;
    it.side=zone;
    // Keep each original group participant when moving only within the peer side.
