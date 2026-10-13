@@ -8,6 +8,8 @@ const clock=()=>new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-
 const today=()=>{const d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'('+'日月火水木金土'[d.getDay()]+')';};
 const blank=()=>({version:1,title:'トーク',self:'自分',mode:'direct',scale:120,theme:'normal',participants:[{name:'自分',avatar:''},{name:'相手',avatar:''}],items:[]});
 let doc=blank(),history=[],future=[],timer,dbCounter=0,loaded=false,touched=false,mediaTarget=null,drag=null;
+// Keep repeated edits to large inline photos from multiplying memory without bound.
+function trimStack(stack){while(stack.length>1 && (stack.length>40 || stack.reduce((n,s)=>n+s.length,0)>32*1024*1024))stack.shift();}
 const snapshot=()=>JSON.stringify(doc);
 const allowedMedia=/^data:(?:image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|audio\/(?:mpeg|ogg|wav));base64,/;
 function sanitize(input){
@@ -39,12 +41,12 @@ function mutate(fn,option={}){
  const before=snapshot();
  fn(doc);
  if(snapshot()===before)return false;
- history.push(before);if(history.length>40)history.shift();future=[];
+ history.push(before);trimStack(history);future=[];
  schedule();if(!option.noRender)render(option);
  return true;
 }
-function undo(){if(!history.length)return;future.push(snapshot());doc=sanitize(JSON.parse(history.pop()));schedule();render();}
-function redo(){if(!future.length)return;history.push(snapshot());doc=sanitize(JSON.parse(future.pop()));schedule();render();}
+function undo(){if(!history.length)return;future.push(snapshot());trimStack(future);doc=sanitize(JSON.parse(history.pop()));schedule();render();}
+function redo(){if(!future.length)return;history.push(snapshot());trimStack(history);doc=sanitize(JSON.parse(future.pop()));schedule();render();}
 function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(Error('IndexedDB不可'));return;}
  const req=indexedDB.open('line-style-editor-cache',1);
  req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('document'))req.result.createObjectStore('document');};
