@@ -5,6 +5,8 @@ on:
     paths:
       - editor.js
       - editor.css
+      - txt-export.js
+      - tests/txt-export.test.cjs
       - index.html
       - script.js
       - tools/verify_editor_browser.py
