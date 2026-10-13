@@ -138,7 +138,7 @@ test('headers inside quoted multiline messages stay in the message body', () => 
   assert.match(messages[0].content, /保存日時：2017/);
 });
 
-test('expired attachment tokens display placeholders, named media stay resources, imported markup remains escaped', () => {
+test('media tokens keep type without invented expiry text; named files and escaping remain safe', () => {
   const parser = loadParser();
   const imported = [
     '12:00\tA\t[ファイル]',
@@ -151,9 +151,13 @@ test('expired attachment tokens display placeholders, named media stay resources
   const parsed = parser.parseText(parser.parseMultiline(imported));
   parser.renderChat(parsed);
   const html = parser.document.getElementById('chatContainer').innerHTML;
-  assert.match(html, /ファイル・保存期間が終了しています/);
-  assert.match(html, /動画・保存期間が終了しています/);
-  assert.match(html, /写真・保存期間が終了しています/);
+  assert.match(html, /class="file-card"/);
+  assert.match(html, /class="file-card-label">ファイル<\/span>/);
+  assert.equal((html.match(/class="media-placeholder"/g) || []).length, 2);
+  assert.match(html, /aria-label="写真の内容はテキスト履歴に含まれません"/);
+  assert.match(html, /aria-label="動画の内容はテキスト履歴に含まれません"/);
+  assert.doesNotMatch(html, /保存期間が終了しています/);
+  assert.doesNotMatch(html, /expired-media-caption/);
   assert.match(html, /default-stamp\.png/);
   assert.match(html, /src="photo\.jpg"/);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
