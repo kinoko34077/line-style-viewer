@@ -80,57 +80,146 @@ body {
 }
 
 #chatContainer {
+  width: 100%;
   max-width: 600px;
-  margin: auto;
+  margin: 0 auto;
+  padding: 8px 0 24px;
+  box-sizing: border-box;
 }
 
 .talk {
   display: flex;
-  margin: 10px 0 2px 0;
   align-items: flex-end;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 7px 0;
 }
 
-.talk.you { flex-direction: row; }
-.talk.me { flex-direction: row-reverse; }
-.talk.me .icon { display: none; }
+.talk.you {
+  justify-content: flex-start;
+}
 
-.icon {
-  width: 40px;
-  height: 40px;
+.talk.me {
+  justify-content: flex-end;
+}
+
+.talk .icon {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  margin: 0 4px 2px 0;
   border-radius: 50%;
-  margin: 0 8px;
+  object-fit: cover;
+  background: #eef0f4;
 }
 
-.message-block {
+.message-block-with-meta {
   display: flex;
-  flex-direction: column;
   align-items: flex-end;
-  max-width: 80%;
+  gap: 5px;
+  min-width: 0;
+  max-width: calc(100% - 50px);
+}
+
+/* Flip ONLY the content group, keeping the outgoing row right-aligned.
+   The markup stays balloon then metadata: visually it becomes metadata | balloon. */
+.talk.me .message-block-with-meta {
+  flex-direction: row-reverse;
+  max-width: 100%;
 }
 
 .balloon {
-  background: #444;
-  padding: 8px 12px;
-  border-radius: 16px;
-  max-width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 42px);
+  box-sizing: border-box;
+  background: #fff;
+  color: #24272a;
+  padding: 9px 12px;
+  border-radius: 15px;
   position: relative;
-  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  font-size: 15px;
 }
 
 .talk.me .balloon {
-  background: #0f8;
-  color: black;
+  background: #a7ed74;
+  color: #1d2518;
+}
+
+/* Read status is above the sent time, on the left of the outgoing balloon.
+   Incoming messages show only a time at the lower-right of the balloon. */
+.meta-inline {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 0;
+  margin-bottom: 2px;
+  color: #3b4a61;
+  font-size: 10.5px;
+  line-height: 1.22;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.talk.me .meta-inline {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.meta-inline .read,
+.meta-inline .time {
+  display: block;
+}
+
+/* Compact corner tails match the message direction. */
+.talk.you .balloon::after,
+.talk.me .balloon::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  width: 10px;
+  height: 10px;
+}
+
+.talk.you .balloon::after {
+  left: -7px;
+  background: #fff;
+  clip-path: polygon(100% 0, 100% 100%, 0 0);
+}
+
+.talk.me .balloon::after {
+  right: -7px;
+  background: #a7ed74;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
 }
 
 .balloon img,
 .balloon video {
-  border-radius: 10px;
+  display: block;
   max-width: 100%;
   height: auto;
+  border-radius: 9px;
 }
 
+/* Media should not be surrounded by a second artificial text balloon. */
+.balloon:has(img),
+.balloon:has(video) {
+  background: transparent !important;
+  padding: 0;
+  box-shadow: none;
+}
 
-/* Attachment tokens in LINE TXT exports do not contain original media. */
+.balloon:has(img)::after,
+.balloon:has(video)::after {
+  display: none;
+}
+
 .expired-media {
   display: flex;
   flex-direction: column;
@@ -159,90 +248,61 @@ body {
   color: #eee;
 }
 
-.meta-info {
-  font-size: 0.65em;
-  color: #aaa;
-  text-align: right;
-  margin-top: 2px;
-  margin-right: 6px;
-}
-
-/* ✅ システムメッセージと日付ラベルの中央配置 */
+/* Date and service notices are centered, distinct from message balloons. */
 .date-label,
 .system {
   display: block;
-  margin: 20px auto;
-  text-align: center;
-  font-size: 0.9em;
   width: fit-content;
-  max-width: 90%;
-}
-
-.date-label {
-  color: #aaa;
-  background-color: rgba(0, 0, 0, 0.4);
+  max-width: 88%;
+  box-sizing: border-box;
+  margin: 18px auto;
   padding: 4px 10px;
-  border-radius: 12px;
+  text-align: center;
+  border-radius: 14px;
+  background: rgba(48, 68, 95, 0.47);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .system {
-  background-color: rgba(0, 0, 0, 0.3);
-  padding: 6px 12px;
-  border-radius: 12px;
-  color: #ccc;
+  margin: 13px auto;
+  background: rgba(48, 68, 95, 0.34);
 }
 
-/* 吹き出しの三角しっぽ */
-.talk.you .balloon::after,
-.talk.me .balloon::after {
-  content: "";
-  position: absolute;
-  top: 10px;
-  border-width: 8px;
-  border-style: solid;
-}
+@media (max-width: 600px) {
+  body {
+    padding: 12px 10px;
+  }
 
-.talk.you .balloon::after {
-  left: -8px;
-  border-color: transparent #444 transparent transparent;
-}
+  .viewer-header {
+    margin-bottom: 12px;
+  }
 
-.talk.me .balloon::after {
-  right: -8px;
-  border-color: transparent transparent transparent #0f8;
-}
+  #chatContainer {
+    padding-top: 4px;
+  }
 
-/* ✅ 添付系（画像・動画）だけは背景なし・しっぽなし */
-.balloon:has(img),
-.balloon:has(video) {
-  background-color: transparent !important;
-  padding: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
+  .talk {
+    gap: 3px;
+    margin: 6px 0;
+  }
 
-.balloon:has(img)::after,
-.balloon:has(video)::after {
-  display: none;
-}
+  .talk .icon {
+    flex-basis: 34px;
+    width: 34px;
+    height: 34px;
+    margin-right: 3px;
+  }
 
-/* ✅ 吹き出し内で改行を反映させる */
-.balloon {
-  white-space: pre-wrap;
-}
+  .message-block-with-meta {
+    max-width: calc(100% - 42px);
+  }
 
-/* ✅ 吹き出しと横に並ぶメタ情報（時刻・既読）用 */
-.message-block-with-meta {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  max-width: 80%;
-}
-
-/* ✅ 吹き出し右横の時刻・既読表示 */
-.meta-inline {
-  font-size: 0.65em;
-  color: #aaa;
-  margin-bottom: 2px;
-  white-space: nowrap;
+  .balloon {
+    font-size: 14px;
+    padding: 8px 11px;
+  }
 }
