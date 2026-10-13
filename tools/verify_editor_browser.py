@@ -29,9 +29,10 @@ def main():
             page.click("#redoButton")
             assert len(project(page)["items"])==1
             edit=page.locator('[data-edit-body]').first
-            edit.fill("編集済みの本文")
+            edit.fill("編集済み <img src=x onerror=alert(1)>")
             edit.press("Tab")
-            assert project(page)["items"][0]["content"]=="編集済みの本文"
+            assert project(page)["items"][0]["content"]=="編集済み <img src=x onerror=alert(1)>"
+            assert page.locator("#chatContainer img[src=x]").count()==0
             t=page.locator('[data-edit-time]').first
             t.fill("01:23");t.press("Tab")
             assert project(page)["items"][0]["time"]=="01:23"
@@ -50,10 +51,13 @@ def main():
             page.click("#addMediaPlaceholderButton")
             placeholder=page.locator('[data-pick-media]').first
             assert placeholder.count()
+            # The LINE-style Photos/Videos menu lists missing media bindings.
+            page.click("#menuToggle")
+            page.click('[data-toggle-section="mediaGallery"]')
+            assert page.locator("#unassignedGallery .gallery-tile").count()==1
+            page.locator("#unassignedGallery .gallery-tile").first.click()
             page.set_input_files("#inlineMediaInput",{"name":"sample.png","mimeType":"image/png","buffer":PNG})
-            # Last selection requires triggering the placeholder button first.
-            page.locator(".unassigned-media").first.click()
-            page.set_input_files("#inlineMediaInput",{"name":"sample.png","mimeType":"image/png","buffer":PNG})
+            page.click("#settingsClose")
             page.wait_for_function("window.talkEditor.getProject().items.some(i=>i.media && i.media.data)")
             assert page.locator(".bound-image img").count()==1
             page.click("#menuToggle")
