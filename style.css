@@ -119,28 +119,31 @@ body {
   align-items: flex-end;
   gap: 5px;
   min-width: 0;
-  max-width: calc(100% - 50px);
+  /* LINE-style shared cap for both directions, including the time/read gutter. */
+  max-width: min(83%, 460px);
 }
 
 /* Flip ONLY the content group, keeping the outgoing row right-aligned.
    The markup stays balloon then metadata: visually it becomes metadata | balloon. */
 .talk.me .message-block-with-meta {
   flex-direction: row-reverse;
-  max-width: 100%;
 }
 
 .balloon {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(100% - 42px);
+  max-width: 100%;
   box-sizing: border-box;
   background: #fff;
   color: #24272a;
   padding: 9px 12px;
   border-radius: 15px;
   position: relative;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* JS emits one <br> for every newline in the export. Do not preserve
+     markup spacing or tab stops a second time with pre-wrap. */
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
   line-height: 1.45;
   font-size: 15px;
 }
@@ -220,10 +223,8 @@ body {
   display: none;
 }
 
-.expired-media {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.media-placeholder {
+  display: block;
   width: 180px;
   max-width: 100%;
   overflow: hidden;
@@ -231,21 +232,49 @@ body {
   background: rgba(25, 30, 36, 0.68);
 }
 
-.expired-media img {
+.media-placeholder img {
   display: block;
   width: 100%;
+  height: auto;
   max-height: 175px;
   object-fit: contain;
 }
 
-.expired-media-caption {
-  display: block;
+/* Text exports contain neither the file name nor the underlying bytes.
+   Show a neutral file tile rather than claiming the file has expired. */
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   box-sizing: border-box;
-  width: 100%;
-  padding: 6px 8px;
-  text-align: center;
-  font-size: 0.72rem;
-  color: #eee;
+  width: 180px;
+  max-width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f1f3f5;
+  color: #333b43;
+  font-size: 13px;
+}
+
+.file-card-icon {
+  flex: 0 0 auto;
+  color: #687d8a;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.file-card-label {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.balloon:has(.file-card) {
+  background: transparent !important;
+  padding: 0;
+}
+
+.balloon:has(.file-card)::after {
+  display: none;
 }
 
 /* Date and service notices are centered, distinct from message balloons. */
@@ -295,10 +324,6 @@ body {
     width: 34px;
     height: 34px;
     margin-right: 3px;
-  }
-
-  .message-block-with-meta {
-    max-width: calc(100% - 42px);
   }
 
   .balloon {

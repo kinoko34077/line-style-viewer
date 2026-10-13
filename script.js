@@ -287,10 +287,14 @@ function renderChat({ meta, items }) {
         } else if (/\.(mp4|webm)$/.test(filename)) {
           contentHTML = `<video src="${safeFilename}" controls></video>`;
         }
-      } else if (['[写真]', '[動画]', '[ファイル]'].includes(item.content)) {
-        // The LINE export holds attachment kinds, not recoverable media.
+      } else if (item.content === '[写真]' || item.content === '[動画]') {
+        // Plain-text exports identify the media type, but contain no image/video.
+        // Do not assert an expiry state: LINE does not always show an expiry caption.
         const kind = item.content.slice(1, -1);
-        contentHTML = `<div class="expired-media" role="img" aria-label="${kind}は閲覧できません"><img src="./default/default-photo.png" alt=""><span class="expired-media-caption">${kind}・保存期間が終了しています</span></div>`;
+        contentHTML = `<div class="media-placeholder" role="img" aria-label="${kind}の内容はテキスト履歴に含まれません"><img src="./default/default-photo.png" alt=""></div>`;
+      } else if (item.content === '[ファイル]') {
+        // Original filename and file bytes are absent from LINE text exports.
+        contentHTML = '<div class="file-card" role="group" aria-label="ファイル（詳細不明）"><span class="file-card-icon" aria-hidden="true">▤</span><span class="file-card-label">ファイル</span></div>';
       } else if (item.content === '[スタンプ]') {
         contentHTML = `<img src="./default/default-stamp.png">`;
       } else {

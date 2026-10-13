@@ -86,7 +86,7 @@ test('standard bubbles, tails, avatar sizes and mobile fit are styled on their o
   assert.match(css, /\.talk\.you\s+\.balloon::after\s*\{[^}]*left:\s*-7px;/);
   assert.match(css, /\.talk\.me\s+\.balloon::after\s*\{[^}]*right:\s*-7px;/);
   assert.match(css, /@media\s*\(max-width:\s*600px\)/);
-  assert.match(css, /\.balloon\s*\{[^}]*overflow-wrap:\s*anywhere;/);
+  assert.match(css, /\.balloon\s*\{[^}]*overflow-wrap:\s*break-word;/);
   assert.match(css, /\.balloon:has\(img\)::after/);
 });
 
@@ -96,4 +96,59 @@ test('own message switches to peer style after a different local identity is sel
   const peer = render(msg,'B').markup;
   assert.match(peer, /class="talk you"/);
   assert.doesNotMatch(peer, /既読/);
+});
+
+
+test('long message cap is shared across directions without double subtraction', () => {
+  const group = css.match(/\.message-block-with-meta\s*\{([^}]+)\}/);
+  const bubble = css.match(/\.balloon\s*\{([^}]+)\}/);
+  const outgoing = css.match(/\.talk\.me \.message-block-with-meta\s*\{([^}]+)\}/);
+  assert.ok(group);
+  assert.ok(bubble);
+  assert.ok(outgoing);
+  assert.match(group[1], /max-width:\s*min\(83%,\s*460px\)/);
+  assert.match(bubble[1], /max-width:\s*100%/);
+  assert.doesNotMatch(outgoing[1], /max-width:/);
+  assert.doesNotMatch(css, /max-width:\s*calc\(100%\s*-\s*42px\)/);
+  assert.doesNotMatch(css, /max-width:\s*calc\(100%\s*-\s*50px\)/);
+});
+
+test('message whitespace is normal; only escaped source newlines become explicit breaks', () => {
+  const bubble = css.match(/\.balloon\s*\{([^}]+)\}/);
+  assert.match(bubble[1], /white-space:\s*normal/);
+  assert.match(bubble[1], /word-break:\s*normal/);
+  assert.match(bubble[1], /overflow-wrap:\s*break-word/);
+  assert.doesNotMatch(bubble[1], /white-space:\s*pre-wrap/);
+
+  const ctx = {
+    document: {
+      getElementById(id) {
+        if (id === 'fileInput') return {addEventListener() {}};
+        if (id === 'chatContainer') return ctx.container;
+        return null;
+      }
+    },
+    console,
+    container: {innerHTML: ''}
+  };
+  vm.createContext(ctx);
+  vm.runInContext(js, ctx);
+  const parsed = ctx.parseText(ctx.parseMultiline('11:10\tA\t"first\n\nthird"'));
+  ctx.renderChat(parsed);
+  assert.match(ctx.container.innerHTML, /class="balloon">first<br><br>third<\/div>/);
+  assert.equal((ctx.container.innerHTML.match(/<br>/g) || []).length, 2);
+  const plain = render([{type:'text',name:'A',time:'11:11',content:'hello'}]).markup;
+  assert.equal((plain.match(/<br>/g) || []).length, 0);
+});
+
+test('fallback media shows no fabricated caption; file card is visually distinct', () => {
+  const markup = render([
+    {type:'attachment',name:'A',time:'11:11',content:'[写真]'},
+    {type:'attachment',name:'B',time:'11:12',content:'[動画]'},
+    {type:'attachment',name:'A',time:'11:13',content:'[ファイル]'}
+  ]).markup;
+  assert.equal((markup.match(/class="media-placeholder"/g) || []).length, 2);
+  assert.match(markup, /class="file-card"/);
+  assert.doesNotMatch(markup, /保存期間が終了しています/);
+  assert.match(css, /\.balloon:has\(\.file-card\)/);
 });
