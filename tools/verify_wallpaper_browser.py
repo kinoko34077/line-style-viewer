@@ -37,8 +37,12 @@ def run():
         for width in [320,375,390,430,768]:
             page=browser.new_page(viewport={"width":width,"height":844},device_scale_factor=1)
             page.goto((ROOT/"index.html").as_uri(),wait_until="domcontentloaded")
-            page.wait_for_selector("#fileInput")
+            page.wait_for_selector("#menuToggle")
+            assert page.locator("#settingsBackdrop").is_hidden()
+            assert page.locator("#conversationTitle").inner_text()=="トーク履歴"
             image_before=Image.open(BytesIO(page.screenshot()))
+            page.click("#menuToggle")
+            page.locator("#fileInput").wait_for(state="visible")
             styles=page.evaluate("""() => {
                 const p=getComputedStyle(document.body,'::before');
                 return {position:p.position, image:p.backgroundImage, size:p.backgroundSize,
@@ -48,6 +52,42 @@ def run():
                 raise AssertionError(f"Wallpaper not viewport-fixed: {styles}")
             page.set_input_files("#fileInput",{"name":"sample.txt","mimeType":"text/plain","buffer":encoded})
             page.wait_for_function("document.querySelector('#sourceStatus').dataset.state==='ready'")
+            assert page.locator("#conversationTitle").inner_text()=="B"
+            # Three theme palettes and complete UI (header/chat/footer) zoom.
+            base=page.locator(".conversation-footer").bounding_box()["height"]
+            assert page.locator("#scaleOutput").inner_text()=="120%"
+            page.locator("#scaleControl").evaluate("""(el)=>{
+                el.value='160';el.dispatchEvent(new Event('input',{bubbles:true}))
+            }""")
+            assert page.locator("#scaleOutput").inner_text()=="160%"
+            larger=page.locator(".conversation-footer").bounding_box()["height"]
+            if larger<=base*1.17:raise AssertionError(f"zoom did not enlarge footer: {base}, {larger}")
+            page.locator("#scaleControl").evaluate("""(el)=>{
+                el.value='80';el.dispatchEvent(new Event('input',{bubbles:true}))
+            }""")
+            smaller=page.locator(".conversation-footer").bounding_box()["height"]
+            if smaller>=base*.84:raise AssertionError("zoom did not reduce footer")
+            page.locator("#scaleControl").evaluate("""(el)=>{
+                el.value='120';el.dispatchEvent(new Event('input',{bubbles:true}))
+            }""")
+            colors={}
+            for theme in ["normal","black","white"]:
+                page.select_option("#themeSelector",theme)
+                data=page.evaluate("""() => {
+                    let style=getComputedStyle(document.querySelector('.talk.me .balloon'));
+                    const wall=getComputedStyle(document.body,'::before');
+                    return {theme:document.documentElement.dataset.theme,
+                        sent:style.backgroundColor,wallpaper:wall.backgroundImage,
+                        footer:getComputedStyle(document.querySelector('.conversation-footer')).backgroundColor};
+                }""")
+                assert data["theme"]==theme
+                if theme=="normal" and "bg-sky.jpg" not in data["wallpaper"]:
+                    raise AssertionError("normal sky wallpaper disappeared")
+                if theme!="normal" and data["wallpaper"]!="none":
+                    raise AssertionError("monochrome theme retained cloud image")
+                colors[theme]=data
+            if len({data["sent"] for data in colors.values()})!=3:
+                raise AssertionError(f"theme bubble colors not distinct: {colors}")
             page.evaluate("""() => {const e=document.getElementById('selfSelector'); if(e.options.length>1){e.value='A';e.dispatchEvent(new Event('change',{bubbles:true}))}}""")
             date_text=page.locator(".date-label").first.inner_text()
             from datetime import date
@@ -70,6 +110,20 @@ def run():
             page.select_option("#chatModeSelector","auto")
             if page.locator(".talk.you .sender-name").count():
                 raise AssertionError("Auto wrongly classifies a two-speaker direct chat")
+            page.click("#settingsClose")
+            if not page.locator("#settingsBackdrop").is_hidden():
+                raise AssertionError("settings did not close")
+            footer=page.locator(".conversation-footer").bounding_box()
+            header=page.locator(".conversation-header").bounding_box()
+            chat=page.locator("#chatContainer").bounding_box()
+            if footer["y"] < chat["y"] + chat["height"] - 2:
+                raise AssertionError("footer overlaps transcript")
+            if header["y"] + header["height"] > chat["y"] + 2:
+                raise AssertionError("header overlaps transcript")
+            if footer["y"] + footer["height"] > 845:
+                raise AssertionError("footer exceeds viewport")
+            if page.locator(".conversation-footer input").count():
+                raise AssertionError("mock composer must not send messages")
             if width<=600 and (ar["width"]!=28 or ar["height"]!=28):
                 raise AssertionError(f"avatar size not screenshot-calibrated: {ar}")
             row_count=page.locator(".talk").count()
@@ -77,10 +131,10 @@ def run():
             if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
                 raise AssertionError(f"horizontal scroll before scroll at {width}")
             image_after=Image.open(BytesIO(page.screenshot()))
-            page.evaluate("window.scrollTo(0,document.documentElement.scrollHeight/2)")
+            page.locator("#chatContainer").evaluate("(el) => el.scrollTop = el.scrollHeight/2")
             page.wait_for_timeout(120)
             image_mid=Image.open(BytesIO(page.screenshot()))
-            page.evaluate("window.scrollTo(0,document.documentElement.scrollHeight)")
+            page.locator("#chatContainer").evaluate("(el) => el.scrollTop = el.scrollHeight")
             page.wait_for_timeout(120)
             image_bottom=Image.open(BytesIO(page.screenshot()))
             before,after,mid,bottom=map(sky_edge,[image_before,image_after,image_mid,image_bottom])
@@ -92,14 +146,18 @@ def run():
             if width==390:
                 image_before.save(OUT/"wallpaper_before_390.png")
                 image_bottom.save(OUT/"wallpaper_after_3000_bottom_390.png")
-                page.evaluate("window.scrollTo(0,0)")
+                page.locator("#chatContainer").evaluate("(el) => el.scrollTop = 0")
                 page.screenshot(path=str(OUT/"wallpaper_after_3000_top_390.png"))
             data={"width":width,"messageCount":row_count,
                 "skyRgbEdgeMeanAbsDiff":[*d],
                 "senderNameAbove":round(br["y"]-sr["y"],2),
                 "incomingBubbleLeft":round(br["x"],2),
                 "incomingAvatarPx":ar["width"],"skyCss":styles["image"],
-                "scrollHeight":page.evaluate("document.documentElement.scrollHeight")}
+                "scrollHeight":page.locator("#chatContainer").evaluate("(e) => e.scrollHeight"),
+                "themeColors":colors,
+                "footerHeightAt120":round(base,2),
+                "footerHeightAt160":round(larger,2),
+                "footerHeightAt80":round(smaller,2)}
             all_metrics.append(data)
             print("BROWSER_CHECK",json.dumps(data,ensure_ascii=False),flush=True)
             page.close()
