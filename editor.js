@@ -41,7 +41,14 @@ function sanitize(input){
  });
  return d;
 }
-function status(s,error=false){const e=E('sourceStatus');if(e){e.textContent=s;e.dataset.state=error?'error':'ready';}}
+function status(s,error=false){
+ const e=E('sourceStatus');
+ if(e){e.textContent=s;e.dataset.state=error?'error':'ready';}
+ // Error status cannot live solely in the hidden settings pane:
+ // autosave quota failures need an always-visible, screenreader-announced alert.
+ const toast=E('editorErrorToast');
+ if(toast){toast.hidden=!error;if(error)toast.textContent=s;}
+}
 function buttons(){if(E('undoButton'))E('undoButton').disabled=!history.length;if(E('redoButton'))E('redoButton').disabled=!future.length;}
 function mutate(fn,option={}){
  touched=true;
