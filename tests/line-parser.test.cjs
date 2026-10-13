@@ -78,8 +78,8 @@ test('repeated LINE backup headers are metadata; a newer full snapshot adds only
   const messages = parsed.items.filter((item) => item.type !== 'date');
   const dates = parsed.items.filter((item) => item.type === 'date');
   assert.equal(messages.length, 3);
-  assert.deepEqual(messages.map((item) => item.content), ['最初', '[ファイル]', '追加']);
-  assert.deepEqual(dates.map((item) => item.content), ['2017/04/24(月)', '2017/04/25(火)']);
+  assert.deepEqual(Array.from(messages, (item) => item.content), ['最初', '[ファイル]', '追加']);
+  assert.deepEqual(Array.from(dates, (item) => item.content), ['2017/04/24(月)', '2017/04/25(火)']);
   assert.equal(parsed.items.some((item) => /トーク履歴|保存日時/.test(item.content)), false);
 });
 
@@ -100,7 +100,7 @@ test('partially overlapping appended snapshots stitch at the matching tail', () 
   ].join('\n');
   const parsed = parser.parseText(parser.parseMultiline(input));
   assert.deepEqual(
-    parsed.items.filter((item) => item.type !== 'date').map((item) => item.content),
+    Array.from(parsed.items.filter((item) => item.type !== 'date'), (item) => item.content),
     ['one', 'two', 'three', 'four']
   );
   assert.equal(parsed.items.filter((item) => item.type === 'date').length, 1);
@@ -175,7 +175,7 @@ test('an entirely repeated older backup is skipped, not rendered twice', () => {
   ].join('\n');
   const parsed = parser.parseText(parser.parseMultiline(input));
   assert.deepEqual(
-    parsed.items.filter((item) => item.type !== 'date').map((item) => item.content),
+    Array.from(parsed.items.filter((item) => item.type !== 'date'), (item) => item.content),
     ['one', 'two', 'three']
   );
 });
