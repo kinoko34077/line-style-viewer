@@ -11,30 +11,35 @@ body {
 
 
 .viewer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 12px;
   margin-bottom: 16px;
 }
 
 .viewer-header h1 {
   margin: 0;
-  font-size: clamp(1.2rem, 3.5vw, 2rem);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(1.1rem, 3.5vw, 2rem);
 }
 
 .self-picker {
   display: flex;
   align-items: center;
+  justify-self: end;
+  min-width: 0;
   gap: 8px;
+  white-space: nowrap;
   font-size: 0.95rem;
 }
 
 .self-picker select {
   box-sizing: border-box;
-  min-width: 145px;
-  max-width: min(55vw, 260px);
+  /* Stable width prevents moving the picker when options are replaced. */
+  width: clamp(136px, 36vw, 184px);
+  min-width: 0;
   padding: 8px 30px 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 8px;

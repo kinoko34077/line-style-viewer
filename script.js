@@ -165,6 +165,9 @@ function parseText(text) {
   const meta = { user: null, icons: {} };
   const sections = [[]];
   let currentSection = sections[0];
+  // A blank sender in consecutive ordinary records denotes the same author.
+  // Keep this presentation inference local to the current uninterrupted run.
+  let previousSpeaker = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -172,6 +175,7 @@ function parseText(text) {
     // Exports may be pasted one after another, each with its own header.
     // A quoted multiline message has already been joined into one logical line.
     if (/^\[LINE\]\s*.+(?:との|の)トーク履歴\s*$/.test(trimmed)) {
+      previousSpeaker = null; // Never inherit across separately saved exports.
       if (currentSection.length) {
         currentSection = [];
         sections.push(currentSection);
@@ -193,6 +197,7 @@ function parseText(text) {
         meta.icons['default'] = declaration.trim();
       }
     } else if (/^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(trimmed)) {
+      previousSpeaker = null; // A new day is not necessarily the same person.
       currentSection.push({ type: 'date', content: trimmed });
     } else if (/^\d{2}:\d{2}\t/.test(line)) {
       const [time, name, ...msgParts] = line.split('\t');
@@ -204,10 +209,17 @@ function parseText(text) {
         ? 'system'
         : callKind ? 'call'
           : /^\[.*\]$/.test(content) ? 'attachment' : 'text';
+      const isOrdinary = type === 'text' || type === 'attachment';
+      const effectiveName = isOrdinary && !name.trim() && previousSpeaker
+        ? previousSpeaker : name;
       currentSection.push({
-        type, name, time, content, ...(callKind ? {callKind} : {})
+        type, name: effectiveName, time, content, ...(callKind ? {callKind} : {})
       });
+      // Notifications and call records break a consecutive message run.
+      // A leading unknown sender stays unknown instead of being guessed.
+      previousSpeaker = isOrdinary && effectiveName.trim() ? effectiveName : null;
     } else if (trimmed !== '') {
+      previousSpeaker = null;
       currentSection.push({ type: 'system', content: trimmed });
     }
   }
