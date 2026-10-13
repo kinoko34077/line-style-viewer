@@ -9,6 +9,49 @@ body {
   padding: 20px;
 }
 
+
+.viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.viewer-header h1 {
+  margin: 0;
+  font-size: clamp(1.2rem, 3.5vw, 2rem);
+}
+
+.self-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.self-picker select {
+  box-sizing: border-box;
+  min-width: 145px;
+  max-width: min(55vw, 260px);
+  padding: 8px 30px 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  color: #fff;
+  background: #28333b;
+  font: inherit;
+}
+
+.self-picker select:disabled {
+  opacity: 0.65;
+}
+
+.self-picker select:focus-visible {
+  outline: 2px solid #9ee6ff;
+  outline-offset: 2px;
+}
+
 .file-controls {
   display: flex;
   flex-wrap: wrap;
