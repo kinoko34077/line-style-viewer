@@ -161,10 +161,6 @@ body {
   margin-top: -5px;
 }
 
-.talk[data-continuation="true"] .balloon {
-  border-radius: 18px;
-}
-
 .talk[data-continuation="true"] .balloon::after {
   display: none;
 }
@@ -207,6 +203,10 @@ body {
   border-radius: 18px 6px 18px 18px;
   background: #a1e96c;
   color: #1e2818;
+}
+
+.talk[data-continuation="true"] .balloon {
+  border-radius: 18px;
 }
 
 /* Own continuation pill needs a full-radius override after .talk.me's
