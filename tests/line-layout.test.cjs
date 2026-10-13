@@ -331,7 +331,7 @@ test('viewport cloud wallpaper remains a fixed layer, not body-attachment depend
   assert.match(css,/html\s*\{[^}]*background-color:\s*#8cabd8;/);
   assert.match(css,/body\s*\{[^}]*background:\s*transparent;[^}]*isolation:\s*isolate;/);
   assert.match(css,/body::before\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*background-image:\s*url\('\.\/default\/bg-sky\.jpg'\);[^}]*background-size:\s*cover;/);
-  assert.doesNotMatch(css,/background-attachment:\s*fixed/);
+  assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g,''),/background-attachment:\s*fixed/);
 });
 
 test('incoming first bubble has a safe name above it; continuation suppresses repeated labels', () => {
