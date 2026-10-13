@@ -71,8 +71,10 @@ function createViewer() {
   };
 }
 
-test('selector lives beside the viewer title and starts disabled', () => {
-  assert.match(html, /<header class="viewer-header">[\s\S]*<h1>LINE風トークビューア<\/h1>[\s\S]*id="selfSelector" disabled/);
+test('sender selector lives inside menu settings, and is disabled until import', () => {
+  assert.match(html, /<header class="conversation-header viewer-header">[\s\S]*id="conversationTitle"/);
+  assert.match(html, /id="menuToggle"[^>]*aria-expanded="false"/);
+  assert.match(html, /id="settingsBackdrop" hidden[\s\S]*id="selfSelector" disabled/);
 });
 
 test('imports sender names without touching source text and switches chat sides immediately', async () => {
@@ -134,12 +136,11 @@ test('a file with no actual senders keeps the identity control disabled', async 
 });
 
 
-test('self-picker stays anchored to the upper-right with fixed width before and after import', () => {
+test('sender picker keeps its identity and is accessible from compact settings', () => {
   assert.match(html, /id="selfSelector" disabled>[\s\S]*<option value="">未読み込み<\/option>/);
-  assert.match(css, /\.viewer-header\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/);
-  assert.match(css, /\.self-picker\s*\{[^}]*justify-self:\s*end;/);
-  assert.match(css, /\.self-picker select\s*\{[^}]*width:\s*clamp\(136px,\s*36vw,\s*184px\);/);
-  assert.doesNotMatch(css, /\.viewer-header\s*\{[^}]*flex-wrap:\s*wrap/);
+  assert.match(html, /id="settingsBackdrop" hidden/);
+  assert.match(css, /\.settings-panel\s*\{[^}]*max-height:\s*min\(90dvh,\s*780px\)/);
+  assert.match(css, /\.settings-field select,[\s\S]*?\.settings-field input\[type=file\]\s*\{[^}]*width:\s*100%;/);
 });
 
 test('inferred consecutive sender appears in the same side and does not add empty selector options', async () => {
