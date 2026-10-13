@@ -1,7 +1,22 @@
 
 const fileInput = document.getElementById('fileInput');
 const sourceStatus = document.getElementById('sourceStatus');
+const selfSelector = document.getElementById('selfSelector');
 let currentSourceName = null;
+let currentChat = null;
+let selectedSelfName = '';
+
+if (selfSelector) {
+  selfSelector.addEventListener('change', () => {
+    selectedSelfName = selfSelector.value;
+    if (currentChat) {
+      renderChat({
+        meta: {...currentChat.meta, user: selectedSelfName},
+        items: currentChat.items
+      });
+    }
+  });
+}
 
 fileInput.addEventListener('change', async (event) => {
   const input = event.target;
@@ -17,7 +32,10 @@ fileInput.addEventListener('change', async (event) => {
   try {
     const text = await file.text();
     const merged = parseMultiline(text);
-    renderChat(parseText(merged));
+    const parsed = parseText(merged);
+    const selected = populateSelfSelector(parsed);
+    renderChat({meta: {...parsed.meta, user: selected}, items: parsed.items});
+    currentChat = parsed;
     currentSourceName = file.name;
     setSourceStatus('ready', `表示中: ${file.name}`);
   } catch (error) {
@@ -30,6 +48,34 @@ fileInput.addEventListener('change', async (event) => {
     input.disabled = false;
   }
 });
+
+// Build the sender list from parsed messages. Only the UI selection changes;
+// the original imported file and parsed message data remain untouched.
+function populateSelfSelector(parsed) {
+  if (!selfSelector) return parsed.meta.user;
+  const senderNames = [...new Set(
+    parsed.items
+      .filter(item => (item.type === 'text' || item.type === 'attachment') && item.name)
+      .map(item => item.name)
+  )];
+  const preferred = senderNames.includes(selectedSelfName)
+    ? selectedSelfName
+    : senderNames.includes(parsed.meta.user) ? parsed.meta.user : '';
+  const prompt = document.createElement('option');
+  prompt.value = '';
+  prompt.textContent = senderNames.length ? '自分を選択' : '送信者なし';
+  selfSelector.replaceChildren(prompt);
+  for (const name of senderNames) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name; // Never treat imported names as HTML.
+    selfSelector.appendChild(option);
+  }
+  selfSelector.disabled = senderNames.length === 0;
+  selfSelector.value = preferred;
+  selectedSelfName = preferred;
+  return preferred;
+}
 
 function setSourceStatus(state, message) {
   if (!sourceStatus) return;
@@ -85,11 +131,25 @@ function parseMultiline(text) {
 function parseText(text) {
   const lines = Array.isArray(text) ? text : String(text).split(/\r?\n/);
   const meta = { user: null, icons: {} };
-  const items = [];
+  const sections = [[]];
+  let currentSection = sections[0];
 
   for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Exports may be pasted one after another, each with its own header.
+    // A quoted multiline message has already been joined into one logical line.
+    if (/^\[LINE\]\s*.+(?:との|の)トーク履歴\s*$/.test(trimmed)) {
+      if (currentSection.length) {
+        currentSection = [];
+        sections.push(currentSection);
+      }
+      continue;
+    }
+    if (/^保存日時\s*[:：]\s*.+$/.test(trimmed)) continue;
+
     if (line.startsWith('# user:')) {
-      meta.user = line.split(':')[1].trim();
+      meta.user = line.slice(7).trim();
     } else if (line.startsWith('# icon:')) {
       const declaration = line.slice(7);
       const separator = declaration.indexOf('=');
@@ -100,24 +160,90 @@ function parseText(text) {
       } else if (declaration.trim()) {
         meta.icons['default'] = declaration.trim();
       }
-    } else if (/^\d{4}\/\d{2}\/\d{2}/.test(line)) {
-      items.push({ type: 'date', content: line });
-    } else if (/\d{2}:\d{2}\t/.test(line)) {
+    } else if (/^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(trimmed)) {
+      currentSection.push({ type: 'date', content: trimmed });
+    } else if (/^\d{2}:\d{2}\t/.test(line)) {
       const [time, name, ...msgParts] = line.split('\t');
       const content = msgParts.join('\t');
       if (/メッセージを取り消しました|通話/.test(content)) {
-        items.push({ type: 'system', content });
+        currentSection.push({ type: 'system', content });
       } else {
-        let type = 'text';
-        if (/^\[.*\]$/.test(content)) type = 'attachment';
-        items.push({ type, name, time, content });
+        currentSection.push({
+          type: /^\[.*\]$/.test(content) ? 'attachment' : 'text',
+          name, time, content
+        });
       }
-    } else if (line.trim() !== '') {
-      items.push({ type: 'system', content: line.trim() });
+    } else if (trimmed !== '') {
+      currentSection.push({ type: 'system', content: trimmed });
     }
   }
 
+  const history = [];
+  for (const section of sections) {
+    let date = null;
+    let dateLabel = null;
+    const records = [];
+    for (const item of section) {
+      if (item.type === 'date') {
+        dateLabel = item.content;
+        date = dateLabel.slice(0, 10); // Ignore weekday spelling for matching.
+      } else {
+        records.push({ date, dateLabel, item });
+      }
+    }
+    // Deduplicate only at boundaries between independently exported backups,
+    // by a contiguous record sequence, never globally by unique message text.
+    const overlap = history.length ? repeatedHistoryPrefix(history, records) : 0;
+    for (let i = overlap; i < records.length; i++) history.push(records[i]);
+  }
+
+  const items = [];
+  let previousDate = null;
+  for (const record of history) {
+    if (record.date && record.date !== previousDate) {
+      items.push({ type: 'date', content: record.dateLabel });
+    }
+    items.push(record.item);
+    previousDate = record.date;
+  }
+  // Preserve a standalone date-only input (even though it has no chat rows).
+  if (!history.length) {
+    for (const section of sections) {
+      for (const item of section) if (item.type === 'date') items.push(item);
+    }
+  }
   return { meta, items };
+}
+
+function recordFingerprint(record) {
+  const item = record.item;
+  return JSON.stringify([record.date, item.type, item.time || '', item.name || '', item.content]);
+}
+
+// KMP prefix matching: longest prefix of new backup that is a suffix of history.
+// Also skip a backup already wholly contained in the accumulated history.
+function repeatedHistoryPrefix(history, incoming) {
+  if (!history.length || !incoming.length) return 0;
+  const keys = incoming.map(recordFingerprint);
+  const prefix = Array(keys.length).fill(0);
+  for (let i = 1, matched = 0; i < keys.length; i++) {
+    while (matched > 0 && keys[i] !== keys[matched]) matched = prefix[matched - 1];
+    if (keys[i] === keys[matched]) matched++;
+    prefix[i] = matched;
+  }
+
+  let matched = 0;
+  let fullyContained = false;
+  for (const record of history) {
+    const key = recordFingerprint(record);
+    while (matched > 0 && key !== keys[matched]) matched = prefix[matched - 1];
+    if (key === keys[matched]) matched++;
+    if (matched === keys.length) {
+      fullyContained = true;
+      matched = prefix[matched - 1];
+    }
+  }
+  return fullyContained ? keys.length : matched;
 }
 
 function renderChat({ meta, items }) {
@@ -144,8 +270,10 @@ function renderChat({ meta, items }) {
         } else if (/\.(mp4|webm)$/.test(filename)) {
           contentHTML = `<video src="${safeFilename}" controls></video>`;
         }
-      } else if (item.content === '[写真]') {
-        contentHTML = `<img src="./default/default-photo.png">`;
+      } else if (['[写真]', '[動画]', '[ファイル]'].includes(item.content)) {
+        // The LINE export holds attachment kinds, not recoverable media.
+        const kind = item.content.slice(1, -1);
+        contentHTML = `<div class="expired-media" role="img" aria-label="${kind}は閲覧できません"><img src="./default/default-photo.png" alt=""><span class="expired-media-caption">${kind}・保存期間が終了しています</span></div>`;
       } else if (item.content === '[スタンプ]') {
         contentHTML = `<img src="./default/default-stamp.png">`;
       } else {

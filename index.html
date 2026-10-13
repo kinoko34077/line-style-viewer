@@ -7,7 +7,15 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>LINE風トークビューア</h1>
+  <header class="viewer-header">
+    <h1>LINE風トークビューア</h1>
+    <label class="self-picker" for="selfSelector">
+      <span>自分：</span>
+      <select id="selfSelector" disabled>
+        <option value="">ファイルを読み込んでください</option>
+      </select>
+    </label>
+  </header>
   <div class="file-controls">
     <input type="file" id="fileInput" accept=".txt,.md" />
     <div id="sourceStatus" class="source-status" data-state="idle" role="status" aria-live="polite">ファイル未選択</div>
