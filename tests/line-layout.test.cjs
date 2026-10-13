@@ -203,12 +203,14 @@ test('long loaded filename and long title stay within viewport and wrap', () => 
   assert.match(css, /\.self-picker\s*\{[^}]*justify-self:\s*end;/);
 });
 
-test('LINE screenshot geometry has asymmetric curved tails rather than straight triangular horns', () => {
-  assert.match(css, /\.balloon\s*\{[^}]*border-radius:\s*6px 18px 18px 18px;/);
-  assert.match(css, /\.talk\.me \.balloon\s*\{[^}]*border-radius:\s*18px 6px 18px 18px;/);
-  assert.match(css, /\.talk\.you \.balloon::after\s*\{[^}]*left:\s*-8px;[^}]*clip-path:\s*path\(/);
-  assert.match(css, /\.talk\.me \.balloon::after\s*\{[^}]*right:\s*-8px;[^}]*clip-path:\s*path\(/);
+test('LINE first-bubble shoulders and the curved horns have a smooth shared contour', () => {
+  assert.match(css, /\.balloon\s*\{[^}]*border-radius:\s*18px;/);
+  assert.match(css, /\.talk\.me \.balloon\s*\{[^}]*border-radius:\s*18px;/);
+  assert.match(css, /\.talk\.you \.balloon::after,\s*\.talk\.me \.balloon::after\s*\{[^}]*top:\s*0;[^}]*width:\s*20px;[^}]*height:\s*22px;/);
+  assert.match(css, /\.talk\.you \.balloon::after\s*\{[^}]*left:\s*-8px;[^}]*clip-path:\s*path\("M0 0 C4 6 9 7 14 5/);
+  assert.match(css, /\.talk\.me \.balloon::after\s*\{[^}]*right:\s*-8px;[^}]*clip-path:\s*path\("M20 0 C16 6 11 7 6 5/);
   assert.doesNotMatch(css, /clip-path:\s*polygon\(/);
+  assert.doesNotMatch(css, /border-radius:\s*6px 18px 18px 18px/);
 });
 
 test('message scale and read/time location remain consistent with native LINE references', () => {
@@ -287,4 +289,29 @@ test('independent native LINE grouping geometry preserves avatar lane and rounde
   assert.match(css,/\.talk\[data-continuation="true"\] \.balloon::after\s*\{[^}]*display:\s*none;/);
   assert.match(css,/@media\s*\(max-width:\s*600px\)[\s\S]*\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*flex-basis:\s*34px;/);
   assert.match(css,/font-family:\s*-apple-system,\s*BlinkMacSystemFont,\s*'Hiragino Kaku Gothic ProN'/);
+});
+
+
+test('first received/sent text bubble retains tail while grouped followups stay smooth and hornless', () => {
+  const out=render([
+    {type:'text',name:'B',time:'10:05',content:'初回の受信。'},
+    {type:'text',name:'B',time:'10:05',content:'連投の受信。'},
+    {type:'text',name:'A',time:'10:06',content:'初回の送信。'},
+    {type:'text',name:'A',time:'10:06',content:'連投の送信。'}
+  ]).markup;
+  assert.equal((out.match(/class="talk you"/g)||[]).length,2);
+  assert.equal((out.match(/class="talk me"/g)||[]).length,2);
+  assert.equal((out.match(/data-continuation="true"/g)||[]).length,2);
+  assert.match(css,/\.talk\[data-continuation="true"\] \.balloon::after\s*\{[^}]*display:\s*none;/);
+  assert.match(css,/\.talk\.me\[data-continuation="true"\] \.balloon\s*\{[^}]*border-radius:\s*18px;/);
+  assert.doesNotMatch(out,/class="system"/);
+});
+
+test('all bubble horn geometry respects the minimum mobile horizontal inset', () => {
+  const body=(css.match(/@media\s*\(max-width:\s*600px\)\s*\{\s*body\s*\{([^}]+)\}/)||[])[1];
+  assert.ok(body);
+  assert.match(body,/padding:\s*12px 8px;/);
+  assert.match(css,/\.talk\.you \.balloon::after\s*\{[^}]*left:\s*-8px;/);
+  assert.match(css,/\.talk\.me \.balloon::after\s*\{[^}]*right:\s*-8px;/);
+  assert.match(css,/\.talk\.you \.balloon::after,\s*\.talk\.me \.balloon::after\s*\{[^}]*width:\s*20px;/);
 });

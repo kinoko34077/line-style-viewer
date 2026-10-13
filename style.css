@@ -188,7 +188,7 @@ body {
   background: #fff;
   color: #24272a;
   padding: 9px 12px;
-  border-radius: 6px 18px 18px 18px;
+  border-radius: 18px;
   position: relative;
   /* JS emits one <br> for every newline in the export. Do not preserve
      markup spacing or tab stops a second time with pre-wrap. */
@@ -200,7 +200,7 @@ body {
 }
 
 .talk.me .balloon {
-  border-radius: 18px 6px 18px 18px;
+  border-radius: 18px;
   background: #a1e96c;
   color: #1e2818;
 }
@@ -242,29 +242,31 @@ body {
   display: block;
 }
 
-/* Native LINE's small horn is a curved taper, not a triangular polygon.
-   These paths occupy a 16px box and attach to the *upper* inner corner.
-   Both shapes stay inside the bubble row's natural layout width. */
+/* The first-message horn must share the main rounded shoulder.
+   A 6px square-ish corner plus a separate 16px horn left a visible notch.
+   Extend the Bezier taper 12px INTO an 18px rounded corner. The shape uses
+   logical CSS pixels, mirrored exactly for incoming and outgoing messages.
+   8px outer extension fits within the phone's default 8px side inset. */
 .talk.you .balloon::after,
 .talk.me .balloon::after {
   content: "";
   position: absolute;
-  top: 2px;
-  width: 16px;
-  height: 16px;
+  top: 0;
+  width: 20px;
+  height: 22px;
   pointer-events: none;
 }
 
 .talk.you .balloon::after {
   left: -8px;
   background: #fff;
-  clip-path: path("M0 1 C4 4 9 3 15 2 L15 15 C11 12 6 8 0 1 Z");
+  clip-path: path("M0 0 C4 6 9 7 14 5 L20 5 L20 22 L8 22 C9 14 5 6 0 0 Z");
 }
 
 .talk.me .balloon::after {
   right: -8px;
   background: #a1e96c;
-  clip-path: path("M16 1 C12 4 7 3 1 2 L1 15 C5 12 10 8 16 1 Z");
+  clip-path: path("M20 0 C16 6 11 7 6 5 L0 5 L0 22 L12 22 C11 14 15 6 20 0 Z");
 }
 
 .balloon img,
