@@ -2,19 +2,32 @@
 const fileInput = document.getElementById('fileInput');
 const sourceStatus = document.getElementById('sourceStatus');
 const selfSelector = document.getElementById('selfSelector');
+const chatModeSelector = document.getElementById('chatModeSelector');
 let currentSourceName = null;
 let currentChat = null;
 let selectedSelfName = '';
+let selectedChatMode = 'auto';
+
+function rerenderSelectedChat() {
+  if (currentChat) {
+    renderChat({
+      meta: {...currentChat.meta, user: selectedSelfName, chatMode: selectedChatMode},
+      items: currentChat.items
+    });
+  }
+}
 
 if (selfSelector) {
   selfSelector.addEventListener('change', () => {
     selectedSelfName = selfSelector.value;
-    if (currentChat) {
-      renderChat({
-        meta: {...currentChat.meta, user: selectedSelfName},
-        items: currentChat.items
-      });
-    }
+    rerenderSelectedChat();
+  });
+}
+if (chatModeSelector) {
+  chatModeSelector.addEventListener('change', () => {
+    selectedChatMode = ['auto', 'direct', 'group'].includes(chatModeSelector.value)
+      ? chatModeSelector.value : 'auto';
+    rerenderSelectedChat();
   });
 }
 
@@ -34,7 +47,7 @@ fileInput.addEventListener('change', async (event) => {
     const merged = parseMultiline(text);
     const parsed = parseText(merged);
     const selected = populateSelfSelector(parsed);
-    renderChat({meta: {...parsed.meta, user: selected}, items: parsed.items});
+    renderChat({meta: {...parsed.meta, user: selected, chatMode: selectedChatMode}, items: parsed.items});
     currentChat = parsed;
     currentSourceName = file.name;
     setSourceStatus('ready', `表示中: ${file.name}`);
