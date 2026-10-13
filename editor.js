@@ -243,12 +243,12 @@ on('settingsBackdrop','click',e=>{
  const tile=e.target.closest('[data-pick-media]');if(tile)pick(tile.dataset.pickMedia,null);
 });
 const mimeAllowed=/^(image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|audio\/(?:mpeg|ogg|wav))$/;
-function pick(itemId,personIndex){mediaTarget={itemId,personIndex};const picker=E('inlineMediaInput');picker.value='';picker.click();}
+function pick(itemId,personIndex){mediaTarget={itemId,personIndex};const picker=E('inlineMediaInput');picker.accept=personIndex===null?'':'image/png,image/jpeg,image/gif,image/webp';picker.value='';picker.click();}
 on('inlineMediaInput','change',async e=>{
  const file=e.target.files[0],target=mediaTarget;mediaTarget=null;
  if(!file||!target)return;
  if(file.size>15*1024*1024){status('15MB以下のファイルを指定してください',true);return;}
- const mime=file.type||'application/zip';
+ const mime=file.type||'application/octet-stream';
  if(target.personIndex!==null&&!/^image\/(?:png|jpeg|gif|webp)$/.test(mime)){status('アイコンはPNG/JPEG/GIF/WebPの画像のみ指定できます',true);return;}
  try{
   let data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>rej(r.error);r.readAsDataURL(file);});
