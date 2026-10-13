@@ -287,7 +287,7 @@ test('independent native LINE grouping geometry preserves avatar lane and rounde
   assert.match(css,/\.talk\[data-continuation="true"\] \.balloon\s*\{[^}]*border-radius:\s*18px;/);
   assert.match(css,/\.talk\.me\[data-continuation="true"\] \.balloon\s*\{[^}]*border-radius:\s*18px;/);
   assert.match(css,/\.talk\[data-continuation="true"\] \.balloon::after\s*\{[^}]*display:\s*none;/);
-  assert.match(css,/@media\s*\(max-width:\s*600px\)[\s\S]*\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*flex-basis:\s*24px;/);
+  assert.match(css,/@media\s*\(max-width:\s*600px\)[\s\S]*\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*flex-basis:\s*28px;/);
   assert.match(css,/font-family:\s*-apple-system,\s*BlinkMacSystemFont,\s*'Hiragino Kaku Gothic ProN'/);
 });
 
