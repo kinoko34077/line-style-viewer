@@ -453,3 +453,23 @@ html[data-theme="black"] .menu-action { background: #394047; color: #f7f8fa; }
   /* Filter/shadow on a huge DOM subtree triggers expensive paint work. */
   filter: none;
 }
+
+/* Offline autosave failures must remain visible outside the settings sheet. */
+.editor-error-toast {
+  position: fixed;
+  inset-inline: 12px;
+  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  z-index: 110;
+  max-width: min(640px, calc(100vw - 24px));
+  margin-inline: auto;
+  padding: 12px 15px;
+  border: 1px solid #de7676;
+  border-radius: 12px;
+  background: #fff4f2;
+  color: #891515;
+  box-shadow: 0 4px 18px #0003;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.editor-error-toast[hidden] { display: none; }
