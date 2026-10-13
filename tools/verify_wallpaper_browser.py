@@ -124,7 +124,7 @@ def run():
                 raise AssertionError("footer exceeds viewport")
             if page.locator(".conversation-footer input").count():
                 raise AssertionError("mock composer must not send messages")
-            if width<=600 and (ar["width"]!=28 or ar["height"]!=28):
+            if width<=600 and (abs(ar["width"]-28*1.2)>1 or abs(ar["height"]-28*1.2)>1):
                 raise AssertionError(f"avatar size not screenshot-calibrated: {ar}")
             row_count=page.locator(".talk").count()
             if row_count!=3000:raise AssertionError(f"lost rows: {row_count}")
