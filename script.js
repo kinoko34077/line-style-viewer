@@ -346,6 +346,13 @@ function repeatedHistoryPrefix(history, incoming) {
   return fullyContained ? keys.length : matched;
 }
 
+// Render the same Japanese date-chip notation as the native screenshot,
+// without mutating source dates or deduplication keys.
+function displayDateLabel(value) {
+  return String(value).replace(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(\([^)]*\))?$/, (_all, year, month, day, weekday = '') =>
+    `${year}年${Number(month)}月${Number(day)}日${weekday}`);
+}
+
 function renderChat({ meta, items }) {
   const container = document.getElementById('chatContainer');
   const html = [];
@@ -361,7 +368,7 @@ function renderChat({ meta, items }) {
   for (const item of items) {
     if (item.type === 'date') {
       previousVisual = null;
-      html.push(`<div class="date-label">${escapeHtml(item.content)}</div>`);
+      html.push(`<div class="date-label">${escapeHtml(displayDateLabel(item.content))}</div>`);
     } else if (item.type === 'system') {
       previousVisual = null;
       html.push(`<div class="system">${escapeHtml(item.content)}</div>`);
@@ -414,12 +421,17 @@ function renderChat({ meta, items }) {
       const readHTML = isSelf
         ? '<span class="read" title="LINEのテキスト履歴には実際の既読状態が含まれません">既読</span>'
         : '';
+      // LINE shows the peer's name above the first incoming balloon of a run.
+      // Never invent the speaker of an unknown-sender export row.
+      const senderLabelHTML = !isSelf && !grouped && item.name && item.name.trim()
+        ? `<span class="sender-name">${escapeHtml(item.name)}</span>` : '';
       html.push(`
         <div class="talk ${isSelf ? 'me' : 'you'}"${grouped ? ' data-continuation="true"' : ''}>
           ${isSelf ? '' : grouped
             ? '<span class="icon-spacer" aria-hidden="true"></span>'
             : `<img class="icon" src="${safeIcon}" alt="">`}
           <div class="message-block-with-meta">
+            ${senderLabelHTML}
             <div class="balloon">${contentHTML}</div>
             <div class="meta-inline">${readHTML}<time class="time">${safeTime}</time></div>
           </div>
