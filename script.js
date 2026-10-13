@@ -349,11 +349,21 @@ function repeatedHistoryPrefix(history, incoming) {
 function renderChat({ meta, items }) {
   const container = document.getElementById('chatContainer');
   const html = [];
+  // LINE groups successive messages by the same sender in the same minute:
+  // the later bubble usually has no repeated profile picture or horn.
+  // This is a purely visual decision. Keep every original message/time.
+  let previousVisual = null;
+  const minuteKey = value => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(value || ''));
+    return m ? Number(m[1]) + ':' + m[2] : null;
+  };
 
   for (const item of items) {
     if (item.type === 'date') {
+      previousVisual = null;
       html.push(`<div class="date-label">${escapeHtml(item.content)}</div>`);
     } else if (item.type === 'system') {
+      previousVisual = null;
       html.push(`<div class="system">${escapeHtml(item.content)}</div>`);
     } else {
       const isSelf = item.type === 'call' && item.callKind === 'missed' ? false
@@ -362,6 +372,10 @@ function renderChat({ meta, items }) {
       const icon = meta.icons[item.name] || meta.icons['default'] || './default/default-icon.png';
       const safeIcon = escapeHtml(icon);
       const safeTime = escapeHtml(item.time);
+      const ordinary = item.type === 'text' || item.type === 'attachment';
+      const minute = minuteKey(item.time);
+      const grouped = Boolean(ordinary && item.name && minute && previousVisual &&
+        previousVisual.name === item.name && previousVisual.minute === minute);
       let contentHTML = '';
 
       if (/^\[.*\.(jpg|png|svg|mp4|webm)\]$/.test(item.content)) {
@@ -401,14 +415,19 @@ function renderChat({ meta, items }) {
         ? '<span class="read" title="LINEのテキスト履歴には実際の既読状態が含まれません">既読</span>'
         : '';
       html.push(`
-        <div class="talk ${isSelf ? 'me' : 'you'}">
-          ${isSelf ? '' : `<img class="icon" src="${safeIcon}" alt="">`}
+        <div class="talk ${isSelf ? 'me' : 'you'}"${grouped ? ' data-continuation="true"' : ''}>
+          ${isSelf ? '' : grouped
+            ? '<span class="icon-spacer" aria-hidden="true"></span>'
+            : `<img class="icon" src="${safeIcon}" alt="">`}
           <div class="message-block-with-meta">
             <div class="balloon">${contentHTML}</div>
             <div class="meta-inline">${readHTML}<time class="time">${safeTime}</time></div>
           </div>
         </div>
       `);
+      previousVisual = ordinary && item.name && minute
+        ? { name: item.name, minute }
+        : null;
     }
   }
 
