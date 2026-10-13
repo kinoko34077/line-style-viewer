@@ -287,6 +287,28 @@ def main():
                     return false;
                 }catch{return JSON.stringify(window.talkEditor.getProject())===before;}
             }""")
+            # Legacy sample [stk_2345.svg] must be visually treated as a
+            # sticker, not a photograph. A non-image file must be rejected.
+            legacy={**original,"items":[
+                {"id":"legacy-sticker-1","type":"attachment","side":"you",
+                 "speaker":"相手","content":"[stk_2345.svg]",
+                 "time":"22:36","media":None,"previousType":"text","callKind":""}
+            ]}
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",legacy)
+            mark=page.locator(".unassigned-stamp").first
+            assert mark.count()==1
+            assert mark.locator("img").get_attribute("src")=="./default/default-stamp.png"
+            mark.click()
+            page.set_input_files("#inlineMediaInput",{"name":"not-image.pdf",
+                "mimeType":"application/pdf","buffer":b"not an image"})
+            assert not project(page)["items"][0]["media"]
+            assert page.locator("#editorErrorToast").is_visible()
+            page.locator(".unassigned-stamp").first.click()
+            page.set_input_files("#inlineMediaInput",{"name":"valid.png",
+                "mimeType":"image/png","buffer":PNG})
+            page.wait_for_function("""() => !!window.talkEditor.getProject().items[0].media""")
+            assert project(page)["items"][0]["content"]=="[stk_2345.svg]"
+            assert page.locator(".bound-stamp img").count()==1
             page.evaluate("p=>window.talkEditor.replaceProject(p)",original)
             assert not errors,errors
             assert page.evaluate("document.documentElement.scrollWidth<=window.innerWidth")
