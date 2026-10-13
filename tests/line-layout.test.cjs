@@ -232,3 +232,58 @@ test('native-inspired call duration has two-line title and duration without losi
   assert.match(msg, /<strong class="call-label">ビデオ通話<\/strong><span class="call-duration">12:06<\/span>/);
   assert.equal((msg.match(/class="call-card"/g)||[]).length,2);
 });
+
+
+test('consecutive incoming text in the same minute keeps indentation but omits repeated avatar and horn', () => {
+  const view=render([
+    {type:'text',name:'B',time:'18:34',content:'そう！'},
+    {type:'text',name:'B',time:'18:34',content:'そっか'},
+    {type:'text',name:'B',time:'18:34',content:'今度は別のパターンも試そう。'},
+    {type:'text',name:'B',time:'18:35',content:'次の分'}
+  ]);
+  assert.equal((view.markup.match(/<img class="icon"/g)||[]).length,2);
+  assert.equal((view.markup.match(/class="icon-spacer"/g)||[]).length,2);
+  assert.equal((view.markup.match(/data-continuation="true"/g)||[]).length,2);
+  assert.match(view.markup,/class="talk you" data-continuation="true"[\s\S]*?class="icon-spacer"[\s\S]*?そっか/);
+  assert.match(view.markup,/class="talk you">[\s\S]*?class="icon"[\s\S]*?次の分/);
+  assert.equal((view.markup.match(/class="time">18:34/g)||[]).length,3);
+});
+
+test('outgoing grouped messages retain independent read/time and reset after sender changes', () => {
+  const view=render([
+    {type:'text',name:'A',time:'9:03',content:'最初'},
+    {type:'text',name:'A',time:'09:03',content:'2通目'},
+    {type:'attachment',name:'A',time:'09:03',content:'[ファイル]'},
+    {type:'text',name:'B',time:'09:03',content:'相手の返信'},
+    {type:'text',name:'A',time:'09:03',content:'自分が再開'}
+  ]);
+  assert.equal((view.markup.match(/data-continuation="true"/g)||[]).length,2);
+  assert.equal((view.markup.match(/class="talk me"/g)||[]).length,4);
+  assert.equal((view.markup.match(/class="read"/g)||[]).length,4);
+  assert.equal((view.markup.match(/class="file-card"/g)||[]).length,1);
+  assert.match(view.markup,/class="talk me" data-continuation="true"[\s\S]*?2通目/);
+  assert.match(view.markup,/class="talk me">[\s\S]*?自分が再開/);
+});
+
+test('date, service notice and call records break any same-minute visual group', () => {
+  const view=render([
+    {type:'text',name:'B',time:'10:12',content:'先の発言'},
+    {type:'date',content:'2026/10/13(火)'},
+    {type:'text',name:'B',time:'10:12',content:'日付をまたぐ'},
+    {type:'system',content:'メッセージの送信を取り消しました'},
+    {type:'text',name:'B',time:'10:12',content:'通知の後'},
+    {type:'call',name:'B',time:'10:12',content:'不在着信',callKind:'missed'},
+    {type:'text',name:'B',time:'10:12',content:'通話の後'}
+  ]);
+  assert.doesNotMatch(view.markup,/data-continuation=/);
+  assert.equal((view.markup.match(/<img class="icon"/g)||[]).length,5);
+});
+
+test('independent native LINE grouping geometry preserves avatar lane and rounded continuation', () => {
+  assert.match(css,/\.talk \.icon-spacer\s*\{[^}]*flex:\s*0 0 36px;[^}]*width:\s*36px;/);
+  assert.match(css,/\.talk\[data-continuation="true"\]\s*\{[^}]*margin-top:\s*-5px;/);
+  assert.match(css,/\.talk\[data-continuation="true"\] \.balloon\s*\{[^}]*border-radius:\s*18px;/);
+  assert.match(css,/\.talk\[data-continuation="true"\] \.balloon::after\s*\{[^}]*display:\s*none;/);
+  assert.match(css,/@media\s*\(max-width:\s*600px\)[\s\S]*\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*flex-basis:\s*34px;/);
+  assert.match(css,/font-family:\s*-apple-system,\s*BlinkMacSystemFont,\s*'Hiragino Kaku Gothic ProN'/);
+});
