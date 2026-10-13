@@ -409,16 +409,19 @@ transcript.addEventListener('pointerdown',e=>{
  pendingPointer=info;
  if(e.pointerType==='touch'){
    holdTimer=setTimeout(()=>{if(pendingPointer===info)beginDrag(info);},320);
- }else{
-   beginDrag(info);
  }
+ // For mouse, start only AFTER moving 6px: keeping pointer capture off
+ // normal taps is essential to target the time field on double-click.
 });
 transcript.addEventListener('pointermove',e=>{
- if(pendingPointer && !drag && pendingPointer.type==='touch'){
-   if(Math.hypot(e.clientX-pendingPointer.x,e.clientY-pendingPointer.y)>9){
-     clearTimeout(holdTimer);holdTimer=null;pendingPointer=null;
+ if(pendingPointer && !drag){
+   const delta=Math.hypot(e.clientX-pendingPointer.x,e.clientY-pendingPointer.y);
+   if(pendingPointer.type==='touch'){
+     if(delta>9){clearTimeout(holdTimer);holdTimer=null;pendingPointer=null;}
+     return;
    }
-   return;
+   if(delta>6)beginDrag(pendingPointer);
+   else return;
  }
  if(!drag)return;
  if(e.cancelable)e.preventDefault();
