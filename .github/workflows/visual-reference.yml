@@ -1,12 +1,6 @@
 name: Compare native LINE screenshots
 
 on:
-  push:
-    branches:
-      - research/native-line-pixel-31
-    paths:
-      - tools/compare_native_line_pixels.py
-      - .github/workflows/visual-reference.yml
   pull_request:
     paths:
       - tools/compare_native_line_pixels.py
