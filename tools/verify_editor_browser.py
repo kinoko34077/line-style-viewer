@@ -60,6 +60,17 @@ def main():
             page.click("#settingsClose")
             page.wait_for_function("window.talkEditor.getProject().items.some(i=>i.media && i.media.data)")
             assert page.locator(".bound-image img").count()==1
+            # Unknown local file MIME must become a safe generic binary
+            # download without executing HTML, script or embedded content.
+            page.click("#addMenuToggle")
+            page.click("#addFilePlaceholderButton")
+            page.locator(".unassigned-media").last.click()
+            page.set_input_files("#inlineMediaInput",{"name":"unknown.sh","mimeType":"application/x-sh","buffer":b"echo local"})
+            page.wait_for_function("window.talkEditor.getProject().items.some(i=>i.media && i.media.name==='unknown.sh')")
+            generic=[i for i in project(page)["items"] if i.get("media") and i["media"]["name"]=="unknown.sh"][0]
+            assert generic["media"]["mime"]=="application/octet-stream"
+            assert generic["media"]["data"].startswith("data:application/octet-stream;base64,")
+            assert page.locator(".bound-file a[download='unknown.sh']").count()==1
             page.click("#menuToggle")
             page.click('[data-toggle-section="profileEditor"]')
             assert page.locator("#participantList .participant-row").count()==2
@@ -79,7 +90,8 @@ def main():
                 page.click("#exportProjectButton")
             exported=json.loads(Path(download.value.path()).read_text())
             assert exported["version"]==1 and exported["title"]=="制作中のトーク"
-            assert exported["items"][-1]["media"]["name"]=="sample.png"
+            assert any(i.get("media") and i["media"]["name"]=="sample.png" for i in exported["items"])
+            assert any(i.get("media") and i["media"]["name"]=="unknown.sh" for i in exported["items"])
             page.click("#settingsClose")
             # Pointer drag to center converts a peer message into system.
             peerId=project(page)["items"][1]["id"]
@@ -127,6 +139,9 @@ def main():
             page.click("#menuToggle");page.click('[data-toggle-section="editorSettings"]')
             page.set_input_files("#projectFileInput",{"name":"reimport.json","mimeType":"application/json","buffer":json.dumps(exported,ensure_ascii=False).encode("utf-8")})
             page.wait_for_function("window.talkEditor.getProject().items.length>0")
+            assert project(page)["title"]=="制作中のトーク"
+            page.set_input_files("#projectFileInput",{"name":"bad.json","mimeType":"application/json","buffer":b"{not-json"})
+            page.wait_for_function("document.querySelector('#sourceStatus').dataset.state==='error'")
             assert project(page)["title"]=="制作中のトーク"
             page.click("#settingsClose")
             assert not errors,errors
