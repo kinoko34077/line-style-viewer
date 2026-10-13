@@ -89,3 +89,14 @@ test('a bound image sticker is still exported and reimported as a stamp, not a p
  assert.deepEqual(Array.from(parse(txt).items.map(i=>i.content)),['[スタンプ]','[写真]']);
  assert.equal(doc.items[0].content,'[スタンプ]');
 });
+
+test('legacy sticker filename from sample TXT remains a sticker after image assignment',()=>{
+ const doc={title:'テスト',self:'kino',participants:[{name:'kino'},{name:'taro'}],items:[
+   item('attachment','you','taro','22:36','[stk_2345.svg]',{
+      name:'replaced-sticker.png',mime:'image/png',data:'data:image/png;base64,AAAA'
+   })
+ ]};
+ const txt=createLineTxt(doc,new Date(2026,9,14));
+ assert.match(txt,/22:36\ttaro\t\[stk_2345\.svg\]/);
+ assert.equal(parse(txt).items[0].content,'[stk_2345.svg]');
+});
