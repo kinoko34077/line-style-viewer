@@ -157,7 +157,10 @@ def main():
             touch_move("you")
             assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="you"
             touch_move("me")
-            assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="me"
+            assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="me",{
+                "after_second_touch":next(i for i in project(page)["items"] if i["id"]==peerId),
+                "entry_markup":page.locator('[data-entry-id="'+peerId+'"]').get_attribute("class")
+            }
             page.wait_for_function("document.querySelector('#sourceStatus').textContent.includes('自動保存')",timeout=15000)
             count=len(project(page)["items"])
             page.reload();page.wait_for_function("!!window.talkEditor && window.talkEditor.getProject().title==='制作中のトーク'",timeout=15000)
