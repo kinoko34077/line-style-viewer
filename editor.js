@@ -95,20 +95,28 @@ const peer=()=>doc.participants.find(p=>p.name!==doc.self)?.name||'相手';
 const group=()=>doc.mode==='group'||doc.mode==='auto'&&new Set(doc.items.filter(i=>i.side!=='system').map(i=>i.speaker).filter(Boolean)).size>=3;
 const avatar=speaker=>doc.participants.find(p=>p.name===speaker)?.avatar||'./default/default-icon.png';
 function mediaKind(it){
- if(it.media?.data){if(it.media.mime.startsWith('image/'))return 'image';if(it.media.mime.startsWith('video/'))return 'video';return 'file';}
- if(it.type==='attachment'||/^\[(写真|動画|ファイル|スタンプ|.*\.(?:png|jpg|jpeg|webp|gif|mp4|pdf))\]$/i.test(it.content)){
+ // An absent sticker is NOT a missing photograph. Preserve the original
+ // exclamation-mark stamp asset even if a sticker was later bound to media.
+ if(/^\[スタンプ\]$/.test(it.content))return 'stamp';
+ if(it.media?.data){
+   if(it.media.mime.startsWith('image/'))return 'image';
+   if(it.media.mime.startsWith('video/'))return 'video';
+   return 'file';
+ }
+ if(it.type==='attachment'||/^\[(写真|動画|ファイル|.*\.(?:png|jpg|jpeg|webp|gif|mp4|pdf))\]$/i.test(it.content)){
    if(/動画|\.mp4/i.test(it.content))return 'video';
    if(/ファイル|\.pdf/i.test(it.content))return 'file';
    return 'image';
  }
  return null;
 }
+const missingAsset=kind=>kind==='stamp'?'./default/default-stamp.png':'./default/default-photo.png';
 function fields(){
  const p=E('participantList'),s=E('composeSpeaker'),gallery=E('unassignedGallery');
  if(p)p.innerHTML=doc.participants.map((x,i)=>`<div class="participant-row"><button type="button" data-avatar-index="${i}" class="avatar-picker" aria-label="アイコンを変更"><img src="${esc(x.avatar||'./default/default-icon.png')}" alt=""></button><input data-person-index="${i}" class="participant-name" aria-label="話者の名前" value="${esc(x.name)}">${x.name===doc.self?'<small>自分</small>':''}</div>`).join('');
  if(s){const old=s.value||s.dataset.preferred||doc.self;s.innerHTML=doc.participants.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');s.value=doc.participants.some(p=>p.name===old)?old:doc.self;}
- if(gallery){const missing=doc.items.filter(x=>mediaKind(x)&&!x.media?.data);
-  gallery.innerHTML=missing.length?missing.map(x=>`<button type="button" class="gallery-tile" data-pick-media="${esc(x.id)}"><img src="./default/default-photo.png" alt=""><span>${esc(x.content)} — 指定</span></button>`).join(''):'<p>未指定の写真・動画・ファイルはありません。</p>';
+ if(gallery && gallery.closest('.menu-expand')?.classList.contains('expanded')){const missing=doc.items.filter(x=>mediaKind(x)&&!x.media?.data);
+  gallery.innerHTML=missing.length?missing.map(x=>`<button type="button" class="gallery-tile" data-pick-media="${esc(x.id)}" aria-label="${esc(x.content)}の素材を選択"><img src="${missingAsset(mediaKind(x))}" alt=""><span>${esc(x.content)}</span></button>`).join(''):'<p>未指定の写真・動画・ファイルはありません。</p>';
  }
 }
 function render(options={}){
@@ -122,6 +130,8 @@ function render(options={}){
  if(typeof applyUiScale==='function')applyUiScale(doc.scale);
  if(typeof applyTheme==='function')applyTheme(doc.theme);
  fields();
+ const isGroupChat=group();
+ const avatars=new Map(doc.participants.map(p=>[p.name,p.avatar||'./default/default-icon.png']));
  let prev=null;const html=[];
  for(const it of doc.items){
   const id=esc(it.id),center=it.side==='system'||it.type==='system'||it.type==='date';
@@ -136,16 +146,16 @@ function render(options={}){
   }
   const mine=it.side==='me',m=/^\d{1,2}:\d{2}$/.test(it.time)?it.time:null;
   const grouped=!!(prev&&prev.speaker===it.speaker&&prev.side===it.side&&m&&m===prev.minute);
-  const icon=mine?'':grouped?'<span class="icon-spacer" aria-hidden="true"></span>':`<img class="icon" src="${esc(avatar(it.speaker))}" alt="">`;
-  const label=group()&&!mine&&!grouped&&it.speaker?`<span class="sender-name">${esc(it.speaker)}</span>`:'';
+  const icon=mine?'':grouped?'<span class="icon-spacer" aria-hidden="true"></span>':`<img class="icon" src="${esc(avatars.get(it.speaker)||'./default/default-icon.png')}" alt="">`;
+  const label=isGroupChat&&!mine&&!grouped&&it.speaker?`<span class="sender-name">${esc(it.speaker)}</span>`:'';
   let balloon=inline,kind=mediaKind(it);
   if(kind){
    if(it.media?.data){
     const url=esc(it.media.data);
-    if(kind==='image')balloon=`<button class="bound-image" type="button" data-pick-media="${id}" aria-label="画像を置換"><img src="${url}" alt="${esc(it.media.name)}"></button>`;
+    if(kind==='image'||kind==='stamp')balloon=`<button class="${kind==='stamp'?'bound-stamp':'bound-image'}" type="button" data-pick-media="${id}" aria-label="${kind==='stamp'?'スタンプ':'画像'}を変更"><img src="${url}" alt="${esc(it.media.name)}"></button>`;
     else if(kind==='video')balloon=`<div class="bound-video"><video src="${url}" controls playsinline></video><button type="button" data-pick-media="${id}">変更</button></div>`;
     else balloon=`<div class="bound-file"><a href="${url}" download="${esc(it.media.name)}">▤ ${esc(it.media.name)}</a><button type="button" data-pick-media="${id}">変更</button></div>`;
-   }else balloon=`<button type="button" class="unassigned-media" data-pick-media="${id}"><img src="./default/default-photo.png" alt=""><span>${kind==='image'?'画像':kind==='video'?'動画':'ファイル'}を指定</span></button>`;
+   }else balloon=`<button type="button" class="unassigned-media unassigned-${kind}" data-pick-media="${id}" aria-label="${kind==='stamp'?'スタンプ':kind==='image'?'画像':kind==='video'?'動画':'ファイル'}を選択"><img src="${missingAsset(kind)}" alt="${kind==='stamp'?'未指定のスタンプ':'未指定の'+(kind==='image'?'画像':kind==='video'?'動画':'ファイル')}">${kind==='video'?'<span class="unassigned-video-play" aria-hidden="true">▶</span>':''}</button>`;
   }
   html.push(`<div class="editable-entry talk ${mine?'me':'you'}${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="${it.side}"${grouped?' data-continuation="true"':''}>${icon}<div class="message-block-with-meta">${label}<div class="balloon${kind?' media-edit':''}">${balloon}${remove}</div><div class="meta-inline">${mine?'<span class="read">既読</span>':''}<input class="inline-time" aria-label="時刻" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1"></div></div></div>`);
   prev={speaker:it.speaker,side:it.side,minute:m};
@@ -247,6 +257,7 @@ on('addIncomingButton','click',()=>{menu(false);focusBody(addItem('text','you','
 on('addSystemButton','click',()=>{menu(false);focusBody(addItem('system','system','システムメッセージ').id);});
 on('addDateButton','click',()=>{menu(false);addItem('date','system',today());});
 on('addMediaPlaceholderButton','click',()=>{menu(false);addItem('attachment','you','[写真]');});
+on('addStampPlaceholderButton','click',()=>{menu(false);addItem('attachment','you','[スタンプ]');});
 on('addFilePlaceholderButton','click',()=>{menu(false);addItem('attachment','you','[ファイル]');});
 on('addMediaButton','click',()=>{const it=addItem('attachment','me','[写真]');pick(it.id,null);});
 on('addFileButton','click',()=>{const it=addItem('attachment','me','[ファイル]');pick(it.id,null);});
@@ -263,7 +274,11 @@ on('participantList','change',e=>{
 on('participantList','click',e=>{const btn=e.target.closest('[data-avatar-index]');if(btn)pick(null,Number(btn.dataset.avatarIndex));});
 on('settingsBackdrop','click',e=>{
  const row=e.target.closest('[data-toggle-section]');
- if(row)E(row.dataset.toggleSection)?.classList.toggle('expanded');
+ if(row){
+  const section=E(row.dataset.toggleSection);
+  section?.classList.toggle('expanded');
+  if(section?.id==='mediaGallery' && section.classList.contains('expanded'))fields();
+ }
  const tile=e.target.closest('[data-pick-media]');if(tile)pick(tile.dataset.pickMedia,null);
 });
 const mimeAllowed=/^(image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|audio\/(?:mpeg|ogg|wav))$/;
@@ -284,7 +299,7 @@ on('inlineMediaInput','change',async e=>{
    if(target.personIndex!==null){if(d.participants[target.personIndex])d.participants[target.personIndex].avatar=data;}
    else{const it=d.items.find(x=>x.id===target.itemId);if(it){
     it.media={data,mime:safeMime,name:file.name};it.type='attachment';
-    it.content=safeMime.startsWith('image/')?'[写真]':safeMime.startsWith('video/')?'[動画]':'[ファイル]';
+    it.content=it.content==='[スタンプ]'?'[スタンプ]':safeMime.startsWith('image/')?'[写真]':safeMime.startsWith('video/')?'[動画]':'[ファイル]';
    }}
   });status('ローカル素材を割り当てました');
  }catch(err){status('素材読込に失敗: '+err.message,true);}
@@ -385,6 +400,7 @@ function selectFromPointer(e,row){
 }
 function clearDrag(){
  clearTimeout(holdTimer);holdTimer=null;
+ if(drag?.frame!=null)cancelAnimationFrame(drag.frame);
  if(drag?.row){drag.row.style.transform='';drag.row.classList.remove('is-moving');}
  if(guide)guide.remove();guide=null;drag=null;pendingPointer=null;
  document.body.classList.remove('editor-dragging');
@@ -392,14 +408,19 @@ function clearDrag(){
 function beginDrag(info){
  if(!info || drag)return;
  const row=info.row;
- drag={id:row.dataset.entryId,row,x:info.x,y:info.y,zone:row.dataset.side,moved:false};
+ // Measure once per drag rather than forcing layout on every pointer event.
+ const bounds=transcript.getBoundingClientRect();
+ drag={id:row.dataset.entryId,row,x:info.x,y:info.y,zone:row.dataset.side,
+   drawnZone:null,lastX:info.x,lastY:info.y,moved:false,
+   bounds,frame:null,guides:null};
  try{row.setPointerCapture?.(info.pointerId);}catch{}
  row.classList.add('is-moving');document.body.classList.add('editor-dragging');
  guide=document.createElement('div');guide.className='editor-drop-guide';
  guide.innerHTML='<span>相手</span><span>システム</span><span>自分</span>';
+ drag.guides=Array.from(guide.children);
  document.body.appendChild(guide);
- const r=transcript.getBoundingClientRect();
- Object.assign(guide.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+ Object.assign(guide.style,{left:bounds.left+'px',top:bounds.top+'px',
+   width:bounds.width+'px',height:bounds.height+'px'});
 }
 transcript.addEventListener('pointerdown',e=>{
  const row=e.target.closest('[data-entry-id]');
@@ -413,6 +434,19 @@ transcript.addEventListener('pointerdown',e=>{
  // For mouse, start only AFTER moving 6px: keeping pointer capture off
  // normal taps is essential to target the time field on double-click.
 });
+function paintDragFrame(){
+ if(!drag)return;
+ drag.frame=null;
+ const {row,bounds,lastX,lastY,x,y,zone}=drag;
+ row.style.transform=`translate3d(${lastX-x}px,${lastY-y}px,0)`;
+ if(zone!==drag.drawnZone){
+   drag.drawnZone=zone;
+   drag.guides.forEach((element,i)=>
+     element.classList.toggle('active',['you','system','me'][i]===zone));
+ }
+ if(lastY<bounds.top+28)transcript.scrollTop-=15;
+ else if(lastY>bounds.bottom-28)transcript.scrollTop+=15;
+}
 transcript.addEventListener('pointermove',e=>{
  if(pendingPointer && !drag){
    const delta=Math.hypot(e.clientX-pendingPointer.x,e.clientY-pendingPointer.y);
@@ -427,12 +461,11 @@ transcript.addEventListener('pointermove',e=>{
  if(e.cancelable)e.preventDefault();
  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
  if(Math.hypot(dx,dy)>6)drag.moved=true;
- drag.row.style.transform=`translate(${dx}px,${dy}px)`;
- const r=transcript.getBoundingClientRect(),fraction=(e.clientX-r.left)/r.width;
+ drag.lastX=e.clientX;drag.lastY=e.clientY;
+ const fraction=(e.clientX-drag.bounds.left)/drag.bounds.width;
  drag.zone=fraction<.36?'you':fraction>.64?'me':'system';
- [...guide.children].forEach((el,i)=>el.classList.toggle('active',['you','system','me'][i]===drag.zone));
- if(e.clientY<r.top+28)transcript.scrollTop-=15;
- if(e.clientY>r.bottom-28)transcript.scrollTop+=15;
+ // Coalesce high-frequency input into one visual update per animation frame.
+ if(drag.frame==null)drag.frame=requestAnimationFrame(paintDragFrame);
 });
 transcript.addEventListener('pointerup',e=>{
  if(pendingPointer && !drag){

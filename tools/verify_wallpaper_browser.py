@@ -171,6 +171,52 @@ def run():
                 "footerHeightAt120":round(base,2),
                 "footerHeightAt160":round(larger,2),
                 "footerHeightAt80":round(smaller,2)}
+            if width==390:
+                # A synthetic 180-event burst on the *actual 3,000-row DOM*
+                # must not force layout or repaint each incoming pointermove.
+                # Include the release/reorder cost separately for diagnosis.
+                perf=page.evaluate("""async () => {
+                    const container=document.getElementById('chatContainer');
+                    container.scrollTop=0;
+                    const row=container.querySelector('.talk.you');
+                    if(!row)throw Error('no incoming message');
+                    const bubble=row.querySelector('.balloon');
+                    const rect=bubble.getBoundingClientRect();
+                    const area=container.getBoundingClientRect();
+                    const x=rect.x+Math.min(rect.width/2,40),y=rect.y+rect.height/2;
+                    const targetX=area.right-area.width*.10;
+                    let pid=333;
+                    const fire=(type,px,py)=>bubble.dispatchEvent(
+                        new PointerEvent(type,{bubbles:true,pointerId:pid,pointerType:'mouse',
+                            button:0,buttons:type==='pointerup'?0:1,clientX:px,clientY:py}));
+                    fire('pointerdown',x,y);
+                    fire('pointermove',x+10,y+6);
+                    const begin=performance.now();
+                    for(let i=0;i<180;i++){
+                        const p=(i+1)/180;
+                        fire('pointermove',x+(targetX-x)*p,y+Math.min(18,p*25));
+                    }
+                    const moveMs=performance.now()-begin;
+                    await new Promise(resolve=>requestAnimationFrame(resolve));
+                    const painted=row.style.transform.startsWith('translate3d(');
+                    const before=window.talkEditor.getProject().items.length;
+                    const startDrop=performance.now();
+                    fire('pointerup',targetX,y+18);
+                    const dropMs=performance.now()-startDrop;
+                    const items=window.talkEditor.getProject().items;
+                    if(items.length!==before)throw Error('lost a message after drag');
+                    const moved=items.find(it=>it.id===row.dataset.entryId);
+                    if(!moved || moved.side!=='me')throw Error('drag did not switch to own side');
+                    return {eventCount:180,moveMs:+moveMs.toFixed(2),
+                        dropMs:+dropMs.toFixed(2),painted,itemCount:items.length};
+                }""")
+                if not perf["painted"]:raise AssertionError("drag did not paint with 3D transform")
+                if perf["moveMs"]>1000:
+                    raise AssertionError(f"Pointer input handlers regressed: {perf}")
+                if perf["dropMs"]>6000:
+                    raise AssertionError(f"Drop/reorder blocked UI excessively: {perf}")
+                print("DRAG_PERF_3000",json.dumps(perf),flush=True)
+                data["dragPerformance"]=perf
             all_metrics.append(data)
             print("BROWSER_CHECK",json.dumps(data,ensure_ascii=False),flush=True)
             page.close()

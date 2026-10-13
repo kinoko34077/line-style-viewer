@@ -101,8 +101,8 @@
 .delete-entry { right: 0; font-size: 16px; cursor: pointer; }
 .editable-entry:hover .drag-grip, .editable-entry:hover .delete-entry,
 .drag-grip:focus-visible, .delete-entry:focus-visible, .editable-entry.is-moving .drag-grip { opacity: 1; }
-.editor-dragging, .editor-dragging * { cursor: grabbing!important; }
-.editable-entry.is-moving { z-index: 20; opacity: .8; filter: drop-shadow(0 5px 7px #0003); }
+.editable-entry.is-moving { cursor: grabbing!important; }
+.editable-entry.is-moving { z-index: 20; opacity: .87; }
 .editor-drop-guide {
   position: fixed;
   z-index: 18;
@@ -397,3 +397,59 @@ html[data-theme="black"] .menu-action { background: #394047; color: #f7f8fa; }
 }
 .save-format-menu button:hover,
 .save-format-menu button:focus-visible { background: var(--compose-background); }
+
+/* Existing original ! sticker and photo placeholder assets are different.
+   No redundant 'select image' text in the chat bubble. */
+.media-edit .unassigned-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 0;
+  line-height: 0;
+}
+.media-edit .unassigned-stamp {
+  width: 70px;
+  min-height: 70px;
+  padding: 5px;
+  background: transparent;
+  border-radius: 0;
+}
+.media-edit .unassigned-stamp img {
+  width: 52px;
+  height: 52px;
+  max-width: 52px;
+  object-fit: contain;
+}
+.media-edit .unassigned-image {
+  width: 145px;
+  min-height: 125px;
+  padding: 8px;
+}
+.media-edit .unassigned-video .unassigned-video-play {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  background: #384454d9;
+  color: white;
+  font-size: 18px;
+  line-height: 1;
+}
+.media-edit .unassigned-file {
+  width: 105px;
+  min-height: 100px;
+}
+.media-edit .unassigned-file img { width: 75px; height: 75px; }
+.media-edit .bound-stamp img {
+  display: block;
+  max-width: 200px;
+  max-height: 220px;
+  object-fit: contain;
+}
+.editable-entry.is-moving {
+  will-change: transform;
+  /* Filter/shadow on a huge DOM subtree triggers expensive paint work. */
+  filter: none;
+}
