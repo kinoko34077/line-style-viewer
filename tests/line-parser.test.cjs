@@ -216,7 +216,7 @@ test('normal authored messages mentioning calls remain ordinary chat records', (
   const parsed = parser.parseText(parser.parseMultiline(input));
   assert.deepEqual(
     Array.from(parsed.items, (item) => item.type),
-    ['text', 'text', 'system']
+    ['text', 'text', 'call']
   );
   assert.equal(parsed.items[0].name, 'A');
   assert.equal(parsed.items[1].name, 'B');
@@ -233,9 +233,9 @@ test('different-time call notices are not collapsed by snapshot overlap', () => 
     '13:00\t\t通話時間 00:15'
   ].join('\n');
   const parsed = parser.parseText(parser.parseMultiline(input));
-  const systems = parsed.items.filter((item) => item.type === 'system');
-  assert.equal(systems.length, 2);
-  assert.deepEqual(Array.from(systems, (item) => item.time), ['12:00', '13:00']);
+  const calls = parsed.items.filter((item) => item.type === 'call');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(Array.from(calls, (item) => item.time), ['12:00', '13:00']);
 });
 
 test('an exact repeated call notice still deduplicates', () => {
@@ -249,5 +249,78 @@ test('an exact repeated call notice still deduplicates', () => {
     '12:00\t\t通話時間 00:15'
   ].join('\n');
   const parsed = parser.parseText(parser.parseMultiline(input));
-  assert.equal(parsed.items.filter((item) => item.type === 'system').length, 1);
+  assert.equal(parsed.items.filter((item) => item.type === 'call').length, 1);
+});
+
+
+test('a blank sender does not convert ordinary messages and files into center system pills', () => {
+  const parser = loadParser();
+  const input = [
+    '2026/10/13(火)',
+    '09:00\t\t発言者不明の通常文',
+    '09:01\t\t[ファイル]',
+    '09:02\tA\t通話したい',
+    '09:03\tA\tさっきメッセージを取り消しました',
+    '09:04\tA\tメッセージを取り消しました',
+    '09:05\t\tAがメッセージを取り消しました',
+  ].join('\n');
+  const items = parser.parseText(parser.parseMultiline(input)).items.filter(i => i.type !== 'date');
+  assert.deepEqual(Array.from(items,i=>i.type), ['text','attachment','text','text','text','system']);
+  assert.equal(items[0].name, '');
+  assert.equal(items[1].content, '[ファイル]');
+});
+
+test('iOS and Android missed and declined calls are typed as speaker-sided call cards', () => {
+  const parser = loadParser();
+  const inputs = [
+    '09:00\tB\t不在着信',
+    '09:01\tB\t☎ 不在着信',
+    '09:02\tA\t☎ 通話に応答がありませんでした',
+    '09:03\tA\t応答なし',
+    '09:04\tA\t☎ 通話をキャンセルしました',
+    '09:05\tA\t通話をキャンセルしました。',
+    '09:06\tA\t☎ 通話時間 0:38',
+    '09:07\tB\t音声通話時間 00:12',
+    '09:08\tA\t通話については明日',
+    '09:09\t\tファイルの話'
+  ].join('\n');
+  const items = parser.parseText(parser.parseMultiline(inputs)).items;
+  assert.deepEqual(Array.from(items, i => i.type), [
+    'call','call','call','call','call','call','call','call','text','text'
+  ]);
+  assert.deepEqual(Array.from(items.filter(i => i.type==='call'), i=>i.callKind),
+    ['missed','missed','unanswered','unanswered','cancelled','cancelled','duration','duration']);
+});
+
+test('real service events remain centered, but ordinary sender-authored descriptions do not', () => {
+  const parser = loadParser();
+  const input = [
+    '12:00\t\t私がメッセージを取り消しました',
+    '12:01\t\tメッセージの送信を取り消しました。',
+    '12:02\t\tグループ音声通話が開始されました。',
+    '12:03\tA\t今日はグループ通話が開始されましたね',
+    '12:04\tA\tAがメッセージを取り消しました'
+  ].join('\n');
+  const items = parser.parseText(parser.parseMultiline(input)).items;
+  assert.deepEqual(Array.from(items, i => i.type), ['system','system','system','text','text']);
+});
+
+test('all recognized call kinds have bubbles and time, with missed calls on received side', () => {
+  const parser = loadParser();
+  const imported = [
+    '10:00\tA\t不在着信',
+    '10:01\tA\t☎ 通話に応答がありませんでした',
+    '10:02\tB\t通話時間 00:01'
+  ].join('\n');
+  const parsed=parser.parseText(parser.parseMultiline(imported));
+  parsed.meta.user='A';
+  parser.renderChat(parsed);
+  const html=parser.document.getElementById('chatContainer').innerHTML;
+  assert.equal((html.match(/class="call-card"/g)||[]).length,3);
+  assert.equal((html.match(/class="call-icon"/g)||[]).length,3);
+  assert.doesNotMatch(html,/☎ 通話に応答がありませんでした/);
+  assert.match(html,/class="talk you"[\s\S]*?不在着信/);
+  assert.match(html,/class="talk me"[\s\S]*?通話に応答がありませんでした/);
+  assert.match(html,/class="time">10:02/);
+  assert.doesNotMatch(html,/class="system">不在着信/);
 });
