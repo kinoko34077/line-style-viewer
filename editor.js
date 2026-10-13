@@ -355,44 +355,79 @@ document.addEventListener('keydown',e=>{
  if(e.key.toLowerCase()==='y'){e.preventDefault();redo();}
  if(e.key.toLowerCase()==='s'){e.preventDefault();exportJson();}
 });
-let guide;
+// Native-like gestures: single tap selects, double tap edits, and
+// dragging the bubble itself moves it. Touch drag starts after a brief hold
+// so ordinary vertical scrolling retains its normal mobile behavior.
+let guide, pendingPointer=null, holdTimer=null;
+function selectFromPointer(e,row){
+ const now=Date.now(),id=row.dataset.entryId;
+ const twice=lastTap.id===id && now-lastTap.at<360;
+ lastTap={id,at:now};
+ if(twice)enableInline(e.target,row);else selectEntry(id);
+}
 function clearDrag(){
+ clearTimeout(holdTimer);holdTimer=null;
  if(drag?.row){drag.row.style.transform='';drag.row.classList.remove('is-moving');}
- if(guide)guide.remove();guide=null;drag=null;
+ if(guide)guide.remove();guide=null;drag=null;pendingPointer=null;
  document.body.classList.remove('editor-dragging');
 }
-transcript.addEventListener('pointerdown',e=>{
- const handle=e.target.closest('[data-drag-handle]'),row=handle?.closest('[data-entry-id]');
- if(!row||e.button>0)return;
- e.preventDefault();
- drag={id:row.dataset.entryId,row,x:e.clientX,y:e.clientY,zone:row.dataset.side,moved:false};
- try{handle.setPointerCapture?.(e.pointerId);}catch{/* Synthetic or unsupported pointers still reorder via bubble events. */}
+function beginDrag(info){
+ if(!info || drag)return;
+ const row=info.row;
+ drag={id:row.dataset.entryId,row,x:info.x,y:info.y,zone:row.dataset.side,moved:false};
+ try{row.setPointerCapture?.(info.pointerId);}catch{}
  row.classList.add('is-moving');document.body.classList.add('editor-dragging');
  guide=document.createElement('div');guide.className='editor-drop-guide';
  guide.innerHTML='<span>相手</span><span>システム</span><span>自分</span>';
  document.body.appendChild(guide);
  const r=transcript.getBoundingClientRect();
  Object.assign(guide.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+}
+transcript.addEventListener('pointerdown',e=>{
+ const row=e.target.closest('[data-entry-id]');
+ if(!row||e.button>0||e.target.closest('button,a,video,[contenteditable="true"],input:not([readonly])'))return;
+ const info={row,x:e.clientX,y:e.clientY,pointerId:e.pointerId,
+   type:e.pointerType,target:e.target,at:Date.now()};
+ pendingPointer=info;
+ if(e.pointerType==='touch'){
+   holdTimer=setTimeout(()=>{if(pendingPointer===info)beginDrag(info);},320);
+ }else{
+   beginDrag(info);
+ }
 });
 transcript.addEventListener('pointermove',e=>{
+ if(pendingPointer && !drag && pendingPointer.type==='touch'){
+   if(Math.hypot(e.clientX-pendingPointer.x,e.clientY-pendingPointer.y)>9){
+     clearTimeout(holdTimer);holdTimer=null;pendingPointer=null;
+   }
+   return;
+ }
  if(!drag)return;
+ if(e.cancelable)e.preventDefault();
  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
- drag.row.style.transform=`translate(${dx}px,${dy}px)`;
  if(Math.hypot(dx,dy)>6)drag.moved=true;
- const r=transcript.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
- drag.zone=x<.36?'you':x>.64?'me':'system';
+ drag.row.style.transform=`translate(${dx}px,${dy}px)`;
+ const r=transcript.getBoundingClientRect(),fraction=(e.clientX-r.left)/r.width;
+ drag.zone=fraction<.36?'you':fraction>.64?'me':'system';
  [...guide.children].forEach((el,i)=>el.classList.toggle('active',['you','system','me'][i]===drag.zone));
  if(e.clientY<r.top+28)transcript.scrollTop-=15;
  if(e.clientY>r.bottom-28)transcript.scrollTop+=15;
 });
 transcript.addEventListener('pointerup',e=>{
+ if(pendingPointer && !drag){
+   const row=pendingPointer.row;
+   clearDrag();
+   if(e.pointerType==='touch')selectFromPointer(e,row);
+   return;
+ }
  if(!drag)return;
  const moved=drag.moved,id=drag.id,zone=drag.zone,row=drag.row;
  const others=[...transcript.querySelectorAll('[data-entry-id]')].filter(el=>el!==row);
  let pos=others.findIndex(el=>e.clientY<el.getBoundingClientRect().top+el.getBoundingClientRect().height/2);
  if(pos<0)pos=others.length;
  clearDrag();
- if(!moved)return;
+ if(!moved){selectEntry(id);return;}
+ selectedEntryId=null;
  mutate(d=>{
   const old=d.items.findIndex(x=>x.id===id);if(old<0)return;
   const [it]=d.items.splice(old,1);
@@ -403,8 +438,7 @@ transcript.addEventListener('pointerup',e=>{
    if(it.type==='system')it.type=['text','attachment','call'].includes(it.previousType)?it.previousType:'text';
    const oldSide=it.side;
    it.side=zone;
-   // Reordering a group peer's message within the left column must
-   // NOT silently change C to the first peer B.
+   // Keep each original group participant when moving only within the peer side.
    if(zone==='me')it.speaker=d.self;
    else if(oldSide!=='you'||!it.speaker||it.speaker===d.self)
      it.speaker=d.participants.find(p=>p.name!==d.self)?.name||'相手';
