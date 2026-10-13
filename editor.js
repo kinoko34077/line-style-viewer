@@ -349,7 +349,13 @@ transcript.addEventListener('pointerup',e=>{
    it.side='system';it.speaker='';
   }else{
    if(it.type==='system')it.type=['text','attachment','call'].includes(it.previousType)?it.previousType:'text';
-   it.side=zone;it.speaker=zone==='me'?d.self:(d.participants.find(p=>p.name!==d.self)?.name||'相手');
+   const oldSide=it.side;
+   it.side=zone;
+   // Reordering a group peer's message within the left column must
+   // NOT silently change C to the first peer B.
+   if(zone==='me')it.speaker=d.self;
+   else if(oldSide!=='you'||!it.speaker||it.speaker===d.self)
+     it.speaker=d.participants.find(p=>p.name!==d.self)?.name||'相手';
   }
   d.items.splice(Math.max(0,Math.min(pos,d.items.length)),0,it);
  });
