@@ -8,6 +8,8 @@ const clock=()=>new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-
 const today=()=>{const d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'('+'日月火水木金土'[d.getDay()]+')';};
 const blank=()=>({version:1,title:'トーク',self:'自分',mode:'direct',scale:120,theme:'normal',participants:[{name:'自分',avatar:''},{name:'相手',avatar:''}],items:[]});
 let doc=blank(),history=[],future=[],timer,dbCounter=0,loaded=false,touched=false,mediaTarget=null,drag=null;
+let selectedEntryId=null;
+let lastTap={id:null,at:0};
 // Keep repeated edits to large inline photos from multiplying memory without bound.
 function trimStack(stack){while(stack.length>1 && (stack.length>40 || stack.reduce((n,s)=>n+s.length,0)>32*1024*1024))stack.shift();}
 const snapshot=()=>JSON.stringify(doc);
@@ -123,13 +125,13 @@ function render(options={}){
  let prev=null;const html=[];
  for(const it of doc.items){
   const id=esc(it.id),center=it.side==='system'||it.type==='system'||it.type==='date';
-  const grip=`<button type="button" class="drag-grip" data-drag-handle aria-label="ドラッグして移動">⠿</button>`;
+  const grip='';
   const remove=`<button type="button" class="delete-entry" data-delete-id="${id}" aria-label="削除">×</button>`;
   const content=esc(it.content).replace(/\n/g,'<br>');
-  const inline=`<span class="inline-body" contenteditable="true" role="textbox" aria-multiline="true" data-edit-body="${id}">${it.type==='date'?esc(displayDateLabel(it.content)):content}</span>`;
+  const inline=`<span class="inline-body" contenteditable="false" role="textbox" aria-multiline="true" data-edit-body="${id}" aria-label="ダブルタップで編集">${it.type==='date'?esc(displayDateLabel(it.content)):content}</span>`;
   if(center){
    prev=null;
-   html.push(`<div class="editable-entry centered-entry" data-entry-id="${id}" data-side="system">${grip}<div class="${it.type==='date'?'date-label':'system'} edit-system">${inline}</div>${it.type==='date'?'':`<input aria-label="時刻" class="inline-time" data-edit-time="${id}" value="${esc(it.time)}">`}${remove}</div>`);
+   html.push(`<div class="editable-entry centered-entry${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="system"><div class="${it.type==='date'?'date-label':'system'} edit-system">${inline}${remove}</div>${it.type==='date'?'':`<input aria-label="時刻" class="inline-time" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1">`}</div>`);
    continue;
   }
   const mine=it.side==='me',m=/^\d{1,2}:\d{2}$/.test(it.time)?it.time:null;
@@ -145,10 +147,10 @@ function render(options={}){
     else balloon=`<div class="bound-file"><a href="${url}" download="${esc(it.media.name)}">▤ ${esc(it.media.name)}</a><button type="button" data-pick-media="${id}">変更</button></div>`;
    }else balloon=`<button type="button" class="unassigned-media" data-pick-media="${id}"><img src="./default/default-photo.png" alt=""><span>${kind==='image'?'画像':kind==='video'?'動画':'ファイル'}を指定</span></button>`;
   }
-  html.push(`<div class="editable-entry talk ${mine?'me':'you'}" data-entry-id="${id}" data-side="${it.side}"${grouped?' data-continuation="true"':''}>${grip}${icon}<div class="message-block-with-meta">${label}<div class="balloon${kind?' media-edit':''}">${balloon}</div><div class="meta-inline">${mine?'<span class="read">既読</span>':''}<input class="inline-time" aria-label="時刻" data-edit-time="${id}" value="${esc(it.time)}"></div></div>${remove}</div>`);
+  html.push(`<div class="editable-entry talk ${mine?'me':'you'}${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="${it.side}"${grouped?' data-continuation="true"':''}>${icon}<div class="message-block-with-meta">${label}<div class="balloon${kind?' media-edit':''}">${balloon}${remove}</div><div class="meta-inline">${mine?'<span class="read">既読</span>':''}<input class="inline-time" aria-label="時刻" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1"></div></div></div>`);
   prev={speaker:it.speaker,side:it.side,minute:m};
  }
- transcript.innerHTML=html.length?html.join(''):'<div class="editor-empty">下の入力欄からメッセージを作成できます。<br>＋から相手・日付・システムメッセージも追加できます。</div>';
+ transcript.innerHTML=html.length?html.join(''):'<div class="editor-empty">下の入力欄からトークを作成できます。<br>メッセージはダブルタップで編集、長押しで移動できます。<br><button type="button" id="emptyImportButton">LINE履歴（TXT/MD）を読み込む</button></div>';
  buttons();
  transcript.scrollTop=options.bottom||atEnd?transcript.scrollHeight:oldScroll;
 }
@@ -168,7 +170,10 @@ function send(){
  const it={id:identifier(),type:'text',side:speaker===doc.self?'me':'you',speaker,time:clock(),content:input.value.replace(/\r\n/g,'\n'),media:null,previousType:'text',callKind:''};
  mutate(d=>d.items.push(it),{bottom:true});input.value='';input.focus();
 }
-function focusBody(id){transcript.querySelector(`[data-edit-body="${id}"]`)?.focus();}
+function focusBody(id){
+ const target=transcript.querySelector(`[data-edit-body="${id}"]`);
+ if(target){target.contentEditable='true';target.setAttribute('tabindex','0');target.focus();}
+}
 function exportJson(){
  const blob=new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
  const link=document.createElement('a');link.href=url;link.download=doc.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,64)+'.linechat.json';
