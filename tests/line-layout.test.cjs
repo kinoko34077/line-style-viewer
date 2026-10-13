@@ -63,7 +63,7 @@ test('sent, received, date, system and multiline contents coexist; user text sta
   ];
   const out = render(items);
   assert.equal(out.writes, 1);
-  assert.match(out.markup, /class="date-label">10/13\(火\)/);
+  assert.match(out.markup, /class="date-label">10\/13\(火\)/);
   assert.match(out.markup, /first<br>second/);
   assert.match(out.markup, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(out.markup, /<script>alert\(1\)<\/script>/);
