@@ -498,9 +498,9 @@ body::before {
 /* Date pill dimensions/color sampled from the attached 390px native screenshot.
    The label is compact, but retains a finger-readable neutral chip. */
 .date-label {
-  font-size: 10px;
-  line-height: 1.35;
-  padding: 5px 9px;
+  font-size: 9px;
+  line-height: 1.4;
+  padding: 6px 7px;
 }
 
 .system {
