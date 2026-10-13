@@ -96,15 +96,24 @@ function parseMultiline(text) {
   const lines = String(text).replace(/\r\n|\r/g, '\n').split('\n');
   const result = [];
   let buffer = null;
+  let pendingBlanks = [];
+  const isRecordStart = line => /^"?\d{1,2}:\d{2}\t/.test(line);
+  const isDate = line => /^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(line);
+  const isMetadata = line =>
+    /^\[LINE\]\s*.+(?:との|の)トーク履歴\s*$/.test(line) ||
+    /^保存日時\s*[:：]\s*.+$/.test(line) ||
+    /^# (?:user|icon):/.test(line);
+  const lastIsMessage = () =>
+    result.length > 0 && /^"?\d{1,2}:\d{2}\t[^\t]*\t/.test(result[result.length - 1]);
 
   for (const line of lines) {
     const trimmed = line.trim();
-    const recordStart = /^"?\d{2}:\d{2}\t/.test(line);
-    const dateStart = /^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(trimmed);
+    const recordStart = isRecordStart(line);
+    const dateStart = isDate(trimmed);
 
     if (buffer !== null) {
-      // Recover a missing final quote at the next genuine row/day boundary.
-      // Do not treat "[LINE]" and "保存日時" inside a quoted body as metadata.
+      // A new timestamp/day after an unclosed quote begins a new message.
+      // Embedded export headers in *valid quoted bodies* stay as text.
       if (!recordStart && !dateStart) {
         buffer += '\n' + line;
         if (/(^|[^\\])"$/.test(trimmed)) {
@@ -117,20 +126,38 @@ function parseMultiline(text) {
       buffer = null;
     }
 
-    // LINE normally quotes the message body when it contains newlines:
-    // 12:00<TAB>A<TAB>"first\nsecond"
-    // Some copied/exported variants quote the entire record instead:
-    // "12:00<TAB>A<TAB>first\nsecond"
-    // Both need to become ONE logical row before classification.
-    const quotedRecord = /^"\d{2}:\d{2}\t/.test(line);
-    const quotedBody = /^\d{2}:\d{2}\t[^\t]*\t"/.test(line);
-    if ((quotedRecord || quotedBody) && !/(^|[^\\])"$/.test(trimmed)) {
-      buffer = line;
+    if (recordStart) {
+      pendingBlanks = [];
+      const quotedRecord = /^"\d{1,2}:\d{2}\t/.test(line);
+      const quotedBody = /^\d{1,2}:\d{2}\t[^\t]*\t"/.test(line);
+      if ((quotedRecord || quotedBody) && !/(^|[^\\])"$/.test(trimmed)) {
+        buffer = line;
+      } else {
+        result.push(line);
+      }
+      continue;
+    }
+    if (dateStart || isMetadata(trimmed)) {
+      pendingBlanks = [];
+      result.push(line);
+      continue;
+    }
+    if (trimmed === '') {
+      pendingBlanks.push(line);
+      continue;
+    }
+    // LINE exports can contain UNQUOTED multiline bodies. An unprefixed
+    // continuation belongs to the last record, not to a new system message
+    // or a nameless chat bubble. Keep explicit paragraph breaks intact.
+    if (lastIsMessage() && !/^\d{1,2}:\d{2}[ \u3000]/.test(line)) {
+      result[result.length - 1] += '\n'.repeat(pendingBlanks.length + 1) + line;
     } else {
+      // An orphan such as a malformed timestamp stays separate and is
+      // handled as ordinary text (never blindly as a system notice).
       result.push(line);
     }
+    pendingBlanks = [];
   }
-
   if (buffer !== null) result.push(buffer);
   return result;
 }
@@ -139,7 +166,7 @@ function parseMultiline(text) {
 // are processed separately. Do not strip legitimate quote characters from
 // an otherwise normal message.
 function normalizeQuotedRecord(line) {
-  if (!/^"\d{2}:\d{2}\t/.test(line)) return line;
+  if (!/^"\d{1,2}:\d{2}\t/.test(line)) return line;
   const unwrapped = line.slice(1);
   return unwrapped.endsWith('"') ? unwrapped.slice(0, -1) : unwrapped;
 }
@@ -213,7 +240,7 @@ function parseText(text) {
     } else if (/^\d{4}\/\d{2}\/\d{2}(?:\([^)]+\))?$/.test(trimmed)) {
       previousSpeaker = null; // A new day is not necessarily the same person.
       currentSection.push({ type: 'date', content: trimmed });
-    } else if (/^\d{2}:\d{2}\t/.test(line)) {
+    } else if (/^\d{1,2}:\d{2}\t/.test(line)) {
       const fields = line.split('\t');
       const time = fields[0];
       // System notifications in native LINE TXT often have only two fields:
