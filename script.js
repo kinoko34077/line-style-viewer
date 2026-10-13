@@ -1,7 +1,22 @@
 
 const fileInput = document.getElementById('fileInput');
 const sourceStatus = document.getElementById('sourceStatus');
+const selfSelector = document.getElementById('selfSelector');
 let currentSourceName = null;
+let currentChat = null;
+let selectedSelfName = '';
+
+if (selfSelector) {
+  selfSelector.addEventListener('change', () => {
+    selectedSelfName = selfSelector.value;
+    if (currentChat) {
+      renderChat({
+        meta: {...currentChat.meta, user: selectedSelfName},
+        items: currentChat.items
+      });
+    }
+  });
+}
 
 fileInput.addEventListener('change', async (event) => {
   const input = event.target;
@@ -17,7 +32,10 @@ fileInput.addEventListener('change', async (event) => {
   try {
     const text = await file.text();
     const merged = parseMultiline(text);
-    renderChat(parseText(merged));
+    const parsed = parseText(merged);
+    const selected = populateSelfSelector(parsed);
+    renderChat({meta: {...parsed.meta, user: selected}, items: parsed.items});
+    currentChat = parsed;
     currentSourceName = file.name;
     setSourceStatus('ready', `表示中: ${file.name}`);
   } catch (error) {
@@ -30,6 +48,34 @@ fileInput.addEventListener('change', async (event) => {
     input.disabled = false;
   }
 });
+
+// Build the sender list from parsed messages. Only the UI selection changes;
+// the original imported file and parsed message data remain untouched.
+function populateSelfSelector(parsed) {
+  if (!selfSelector) return parsed.meta.user;
+  const senderNames = [...new Set(
+    parsed.items
+      .filter(item => (item.type === 'text' || item.type === 'attachment') && item.name)
+      .map(item => item.name)
+  )];
+  const preferred = senderNames.includes(selectedSelfName)
+    ? selectedSelfName
+    : senderNames.includes(parsed.meta.user) ? parsed.meta.user : '';
+  const prompt = document.createElement('option');
+  prompt.value = '';
+  prompt.textContent = senderNames.length ? '自分を選択' : '送信者なし';
+  selfSelector.replaceChildren(prompt);
+  for (const name of senderNames) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name; // Never treat imported names as HTML.
+    selfSelector.appendChild(option);
+  }
+  selfSelector.disabled = senderNames.length === 0;
+  selfSelector.value = preferred;
+  selectedSelfName = preferred;
+  return preferred;
+}
 
 function setSourceStatus(state, message) {
   if (!sourceStatus) return;
