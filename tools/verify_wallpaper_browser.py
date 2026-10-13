@@ -63,11 +63,17 @@ def run():
             assert page.locator("#scaleOutput").inner_text()=="160%"
             larger=page.locator(".conversation-footer").bounding_box()["height"]
             if larger<=base*1.17:raise AssertionError(f"zoom did not enlarge footer: {base}, {larger}")
+            right160=page.locator(".conversation-footer").bounding_box()["x"] + page.locator(".conversation-footer").bounding_box()["width"]
+            if right160>width+1 or page.evaluate("document.documentElement.scrollWidth > innerWidth"):
+                raise AssertionError(f"160% UI overflow at viewport {width}: right={right160}")
             page.locator("#scaleControl").evaluate("""(el)=>{
                 el.value='80';el.dispatchEvent(new Event('input',{bubbles:true}))
             }""")
             smaller=page.locator(".conversation-footer").bounding_box()["height"]
             if smaller>=base*.84:raise AssertionError("zoom did not reduce footer")
+            right80=page.locator(".conversation-footer").bounding_box()["x"] + page.locator(".conversation-footer").bounding_box()["width"]
+            if right80>width+1 or page.evaluate("document.documentElement.scrollWidth > innerWidth"):
+                raise AssertionError(f"80% UI overflow at viewport {width}: right={right80}")
             page.locator("#scaleControl").evaluate("""(el)=>{
                 el.value='120';el.dispatchEvent(new Event('input',{bubbles:true}))
             }""")
