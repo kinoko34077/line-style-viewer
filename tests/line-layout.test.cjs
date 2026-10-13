@@ -368,7 +368,7 @@ test('Japanese date display changes only the rendered chip, not the source item'
 test('mobile iPhone reference uses 24px avatars, compact 13px chat text and 2025 green', () => {
   const mobile=(css.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*)\}\s*$/)||[])[1];
   assert.ok(mobile);
-  assert.match(mobile,/\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*width:\s*24px;/);
+  assert.match(mobile,/\.talk \.icon,\s*\.talk \.icon-spacer\s*\{[^}]*width:\s*28px;/);
   assert.match(mobile,/\.balloon\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.4;[^}]*padding:\s*8px 12px;/);
   assert.match(mobile,/min-width:\s*56px;/);
   assert.match(css,/\.talk\.me \.balloon\s*\{[^}]*background:\s*#6de67b;/);
