@@ -19,6 +19,14 @@
   <div class="file-controls">
     <input type="file" id="fileInput" accept=".txt,.md" />
     <div id="sourceStatus" class="source-status" data-state="idle" role="status" aria-live="polite">ファイル未選択</div>
+    <label class="chat-mode-picker" for="chatModeSelector">
+      <span>会話：</span>
+      <select id="chatModeSelector" aria-label="会話形式">
+        <option value="auto">自動</option>
+        <option value="direct">個チャ</option>
+        <option value="group">グループ</option>
+      </select>
+    </label>
   </div>
   <div id="chatContainer"></div>
   <script src="script.js"></script>
