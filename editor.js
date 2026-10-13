@@ -73,14 +73,24 @@ async function readCache(){
   r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);
   tx.oncomplete=()=>database.close();
  });}
+// Serialize cache writes, so a delayed earlier IndexedDB transaction
+// cannot finish after and replace a newer edited document.
+let saveQueue=Promise.resolve();
 function schedule(){
  const n=++dbCounter;
  clearTimeout(timer);
  timer=setTimeout(async()=>{
   if(n!==dbCounter)return;
   const data=snapshot();
-  try{await saveCache(data);status('ブラウザ内に自動保存しました');}
-  catch{
+  saveQueue=saveQueue.catch(()=>{}).then(()=>{
+   if(n!==dbCounter)return;
+   return saveCache(data);
+  });
+  try{
+   await saveQueue;
+   if(n===dbCounter)status('ブラウザ内に自動保存しました');
+  }catch{
+   if(n!==dbCounter)return;
    try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);status('簡易キャッシュに自動保存しました');}
    catch{status('自動保存ができません。右上の保存でJSONを書き出してください',true);}
   }
@@ -208,7 +218,7 @@ function exportTxt(){
 }
 async function importJson(file){
  if(!file)return;
- try{const text=await file.text();if(text.length>120*1024*1024)throw Error('ファイルサイズ超過');
+ try{if(file.size>120*1024*1024)throw Error('ファイルサイズ超過');const text=await file.text();if(text.length>120*1024*1024)throw Error('ファイルサイズ超過');
   const parsed=sanitize(JSON.parse(text));
   mutate(()=>{doc=parsed;});status('保存したトークを読み込みました');
  }catch(e){status('読み込み失敗: '+e.message,true);}
