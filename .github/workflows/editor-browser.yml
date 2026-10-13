@@ -1,0 +1,36 @@
+name: Verify offline chat editor
+
+on:
+  pull_request:
+    paths:
+      - editor.js
+      - editor.css
+      - index.html
+      - script.js
+      - tools/verify_editor_browser.py
+      - .github/workflows/editor-browser.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  editor-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install browser and JSON test support
+        run: |
+          python3 -m pip install --quiet playwright
+          python3 -m playwright install chromium
+      - name: Verify editor UI, saving, history, drag and project round-trip
+        run: python3 tools/verify_editor_browser.py
+      - name: Save anonymous editor screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-chat-editor-evidence
+          path: visual-editor-result/
+          retention-days: 7
+          if-no-files-found: warn
