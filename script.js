@@ -297,12 +297,17 @@ function renderChat({ meta, items }) {
         contentHTML = escapeHtml(item.content.replace(/^"|"$/g, '')).replace(/\n/g, '<br>');
       }
 
+      // Incoming: avatar | white balloon | time.
+      // Outgoing: read/time stacked to the left of a right-aligned balloon.
+      const readHTML = isSelf
+        ? '<span class="read" title="LINEのテキスト履歴には実際の既読状態が含まれません">既読</span>'
+        : '';
       html.push(`
         <div class="talk ${isSelf ? 'me' : 'you'}">
-          <img class="icon" src="${safeIcon}" />
+          ${isSelf ? '' : `<img class="icon" src="${safeIcon}" alt="">`}
           <div class="message-block-with-meta">
             <div class="balloon">${contentHTML}</div>
-            <div class="meta-inline">${safeTime}${isSelf ? '　既読' : ''}</div>
+            <div class="meta-inline">${readHTML}<time class="time">${safeTime}</time></div>
           </div>
         </div>
       `);
