@@ -37,7 +37,7 @@ test('quoted multiline message remains one chat item', () => {
   assert.equal(parsed.items.length, 2);
   assert.equal(parsed.items[0].type, 'text');
   assert.equal(parsed.items[0].name, 'kino');
-  assert.equal(parsed.items[0].content, '"first line\nsecond line"');
+  assert.equal(parsed.items[0].content, 'first line\nsecond line');
   assert.equal(parsed.items[1].content, 'next');
 });
 
@@ -397,7 +397,7 @@ test('a standalone unknown sender remains unknown, while a multiline continuatio
   assert.equal(parsed.items[0].name, '');
   assert.equal(parsed.items[1].name, 'A');
   assert.equal(parsed.items[2].name, 'A');
-  assert.equal(parsed.items[2].content, '"next line\nstill next line"');
+  assert.equal(parsed.items[2].content, 'next line\nstill next line');
 });
 
 test('inferred sender identity is used for outgoing rendering without editing source history', () => {
