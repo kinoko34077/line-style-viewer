@@ -324,3 +324,91 @@ test('all recognized call kinds have bubbles and time, with missed calls on rece
   assert.match(html,/class="time">10:02/);
   assert.doesNotMatch(html,/class="system">不在着信/);
 });
+
+
+test('consecutive nameless text and attachments inherit the last explicit sender', () => {
+  const parser = loadParser();
+  const input = [
+    '2026/10/13(火)',
+    '09:00\tA\tfirst',
+    '09:01\t\tsecond',
+    '09:02\t\t[ファイル]',
+    '09:03\tB\treply',
+    '09:04\t\tfollow-up',
+    '09:05\t\t[写真]'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  const messages = parsed.items.filter(item => item.type !== 'date');
+  assert.deepEqual(Array.from(messages, item => item.name), ['A', 'A', 'A', 'B', 'B', 'B']);
+  assert.deepEqual(Array.from(messages, item => item.type),
+    ['text', 'text', 'attachment', 'text', 'text', 'attachment']);
+  assert.deepEqual(Array.from(messages, item => item.time),
+    ['09:00', '09:01', '09:02', '09:03', '09:04', '09:05']);
+  assert.ok(input.includes('09:01\t\tsecond'), 'source must remain unchanged');
+});
+
+test('speaker inference cannot cross a dated day, pasted backup, system or call boundary', () => {
+  const parser = loadParser();
+  const input = [
+    '[LINE] Bとのトーク履歴',
+    '2026/10/12(月)',
+    '08:00\tA\tfirst',
+    '08:01\t\tsecond',
+    '2026/10/13(火)',
+    '09:00\t\tnew day unknown',
+    '09:01\tB\tnew explicit speaker',
+    '09:02\t\tB continued',
+    '09:03\t\tBがメッセージを取り消しました',
+    '09:04\t\tunknown after unsend',
+    '09:05\tA\tnamed again',
+    '09:06\t\t不在着信',
+    '09:07\t\tunknown after call',
+    '[LINE] Bとのトーク履歴',
+    '保存日時：2026/10/14 10:00',
+    '2026/10/14(水)',
+    '10:00\t\tunknown first row in next export'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  const messages = parsed.items.filter(item => item.type !== 'date');
+  assert.deepEqual(Array.from(messages, item => [item.content, item.name, item.type]), [
+    ['first', 'A', 'text'],
+    ['second', 'A', 'text'],
+    ['new day unknown', '', 'text'],
+    ['new explicit speaker', 'B', 'text'],
+    ['B continued', 'B', 'text'],
+    ['Bがメッセージを取り消しました', '', 'system'],
+    ['unknown after unsend', '', 'text'],
+    ['named again', 'A', 'text'],
+    ['不在着信', '', 'call'],
+    ['unknown after call', '', 'text'],
+    ['unknown first row in next export', '', 'text']
+  ]);
+});
+
+test('a standalone unknown sender remains unknown, while a multiline continuation gets speaker', () => {
+  const parser = loadParser();
+  const lines = [
+    '12:00\t\tunknown without previous speaker',
+    '12:01\tA\tfirst',
+    '12:02\t\t"next line',
+    'still next line"'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(lines));
+  assert.equal(parsed.items[0].name, '');
+  assert.equal(parsed.items[1].name, 'A');
+  assert.equal(parsed.items[2].name, 'A');
+  assert.equal(parsed.items[2].content, '"next line\nstill next line"');
+});
+
+test('inferred sender identity is used for outgoing rendering without editing source history', () => {
+  const parser = loadParser();
+  const input = '10:00\tA\tfirst\n10:01\t\tsecond\n10:02\t\t[ファイル]';
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  parsed.meta.user = 'A';
+  parser.renderChat(parsed);
+  const output = parser.document.getElementById('chatContainer').innerHTML;
+  assert.equal((output.match(/class="talk me"/g) || []).length, 3);
+  assert.equal((output.match(/class="file-card"/g) || []).length, 1);
+  assert.equal((output.match(/class="system"/g) || []).length, 0);
+  assert.equal(input.includes('10:01\t\tsecond'), true);
+});
