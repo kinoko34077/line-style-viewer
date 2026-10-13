@@ -26,6 +26,12 @@ function createViewer() {
       listeners[type] = fn;
     }
   };
+  const chatModeSelector = {
+    value: 'auto',
+    addEventListener(type, fn) {
+      listeners['chat-mode:' + type] = fn;
+    }
+  };
   const fileInput = {
     files: [],
     value: 'file',
@@ -38,7 +44,7 @@ function createViewer() {
   const sourceStatus = {dataset: {}, textContent: ''};
   const dom = {
     getElementById(id) {
-      return {fileInput, selfSelector, chatContainer:container, sourceStatus}[id] || null;
+      return {fileInput, selfSelector, chatModeSelector, chatContainer:container, sourceStatus}[id] || null;
     },
     createElement(tag) {
       assert.equal(tag, 'option');
@@ -49,7 +55,7 @@ function createViewer() {
   vm.createContext(context);
   vm.runInContext(source, context, {filename:'script.js'});
   return {
-    fileInput, selfSelector, options, container, sourceStatus, context,
+    fileInput, selfSelector, chatModeSelector, options, container, sourceStatus, context,
     async load(name, fileContent) {
       fileInput.files = [{name, text: async () => fileContent}];
       await listeners['file:change']({target: fileInput});
@@ -57,6 +63,10 @@ function createViewer() {
     select(value) {
       selfSelector.value = value;
       listeners.change();
+    },
+    setMode(value) {
+      chatModeSelector.value = value;
+      listeners['chat-mode:change']();
     }
   };
 }
@@ -149,4 +159,36 @@ test('inferred consecutive sender appears in the same side and does not add empt
   viewer.select('B');
   assert.equal((viewer.container.innerHTML.match(/class="talk me"/g)||[]).length,2);
   assert.equal((viewer.container.innerHTML.match(/class="talk you"/g)||[]).length,3);
+});
+
+
+test('room-type override changes visible names instantly without rereading the file', async () => {
+  const viewer=createViewer();
+  const input='2026/06/27(土)\n18:00\tA\t自分\n18:01\tB\t相手';
+  await viewer.load('direct.txt',input);
+  viewer.select('A');
+  assert.doesNotMatch(viewer.container.innerHTML,/class="sender-name"/);
+  assert.match(viewer.container.innerHTML,/class="date-label">6\/27\(土\)/);
+  const previousStatus=viewer.sourceStatus.textContent;
+  viewer.setMode('group');
+  assert.match(viewer.container.innerHTML,/class="sender-name">B<\/span>/);
+  viewer.setMode('direct');
+  assert.doesNotMatch(viewer.container.innerHTML,/class="sender-name"/);
+  viewer.setMode('auto');
+  assert.doesNotMatch(viewer.container.innerHTML,/class="sender-name"/);
+  assert.equal(viewer.sourceStatus.textContent,previousStatus);
+  assert.equal(viewer.fileInput.disabled,false);
+});
+
+test('auto group detection uses the imported participants, not just the selected self', async () => {
+  const viewer=createViewer();
+  await viewer.load('group.txt','10:00\tA\tA\n10:01\tB\tB\n10:02\tC\tC');
+  viewer.select('A');
+  assert.equal((viewer.container.innerHTML.match(/class="sender-name"/g)||[]).length,2);
+  viewer.select('C');
+  assert.equal((viewer.container.innerHTML.match(/class="sender-name"/g)||[]).length,2);
+  viewer.setMode('direct');
+  assert.doesNotMatch(viewer.container.innerHTML,/class="sender-name"/);
+  viewer.setMode('group');
+  assert.equal((viewer.container.innerHTML.match(/class="sender-name"/g)||[]).length,2);
 });

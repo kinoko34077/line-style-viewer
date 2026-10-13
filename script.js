@@ -2,19 +2,32 @@
 const fileInput = document.getElementById('fileInput');
 const sourceStatus = document.getElementById('sourceStatus');
 const selfSelector = document.getElementById('selfSelector');
+const chatModeSelector = document.getElementById('chatModeSelector');
 let currentSourceName = null;
 let currentChat = null;
 let selectedSelfName = '';
+let selectedChatMode = 'auto';
+
+function rerenderSelectedChat() {
+  if (currentChat) {
+    renderChat({
+      meta: {...currentChat.meta, user: selectedSelfName, chatMode: selectedChatMode},
+      items: currentChat.items
+    });
+  }
+}
 
 if (selfSelector) {
   selfSelector.addEventListener('change', () => {
     selectedSelfName = selfSelector.value;
-    if (currentChat) {
-      renderChat({
-        meta: {...currentChat.meta, user: selectedSelfName},
-        items: currentChat.items
-      });
-    }
+    rerenderSelectedChat();
+  });
+}
+if (chatModeSelector) {
+  chatModeSelector.addEventListener('change', () => {
+    selectedChatMode = ['auto', 'direct', 'group'].includes(chatModeSelector.value)
+      ? chatModeSelector.value : 'auto';
+    rerenderSelectedChat();
   });
 }
 
@@ -34,7 +47,7 @@ fileInput.addEventListener('change', async (event) => {
     const merged = parseMultiline(text);
     const parsed = parseText(merged);
     const selected = populateSelfSelector(parsed);
-    renderChat({meta: {...parsed.meta, user: selected}, items: parsed.items});
+    renderChat({meta: {...parsed.meta, user: selected, chatMode: selectedChatMode}, items: parsed.items});
     currentChat = parsed;
     currentSourceName = file.name;
     setSourceStatus('ready', `表示中: ${file.name}`);
@@ -348,14 +361,23 @@ function repeatedHistoryPrefix(history, incoming) {
 
 // Render the same Japanese date-chip notation as the native screenshot,
 // without mutating source dates or deduplication keys.
-function displayDateLabel(value) {
+function displayDateLabel(value, currentYear = new Date().getFullYear()) {
   return String(value).replace(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(\([^)]*\))?$/, (_all, year, month, day, weekday = '') =>
-    `${year}年${Number(month)}月${Number(day)}日${weekday}`);
+    Number(year) === currentYear
+      ? `${Number(month)}/${Number(day)}${weekday}`
+      : `${year}年${Number(month)}月${Number(day)}日${weekday}`);
 }
 
 function renderChat({ meta, items }) {
   const container = document.getElementById('chatContainer');
   const html = [];
+  // If three distinct people have spoken, this is a group. A small group
+  // with only two observed speakers requires manual room-type selection.
+  const speakers = new Set(items.filter(item =>
+    (item.type === 'text' || item.type === 'attachment') && item.name && item.name.trim()
+  ).map(item => item.name));
+  const showGroupNames = meta.chatMode === 'group' ||
+    (meta.chatMode !== 'direct' && speakers.size >= 3);
   // LINE groups successive messages by the same sender in the same minute:
   // the later bubble usually has no repeated profile picture or horn.
   // This is a purely visual decision. Keep every original message/time.
@@ -423,7 +445,7 @@ function renderChat({ meta, items }) {
         : '';
       // LINE shows the peer's name above the first incoming balloon of a run.
       // Never invent the speaker of an unknown-sender export row.
-      const senderLabelHTML = !isSelf && !grouped && item.name && item.name.trim()
+      const senderLabelHTML = showGroupNames && !isSelf && !grouped && item.name && item.name.trim()
         ? `<span class="sender-name">${escapeHtml(item.name)}</span>` : '';
       html.push(`
         <div class="talk ${isSelf ? 'me' : 'you'}"${grouped ? ' data-continuation="true"' : ''}>

@@ -50,13 +50,26 @@ def run():
             page.wait_for_function("document.querySelector('#sourceStatus').dataset.state==='ready'")
             page.evaluate("""() => {const e=document.getElementById('selfSelector'); if(e.options.length>1){e.value='A';e.dispatchEvent(new Event('change',{bubbles:true}))}}""")
             date_text=page.locator(".date-label").first.inner_text()
-            if date_text!="2026年10月13日(火)":raise AssertionError("date display: "+date_text)
+            from datetime import date
+            expected_date="10/13(火)" if date.today().year==2026 else "2026年10月13日(火)"
+            if date_text!=expected_date:raise AssertionError("date display: "+date_text)
+            if page.locator(".talk.you .sender-name").count():
+                raise AssertionError("Two-person direct chat shows sender names")
+            # When an actual group has only two active speakers, the user can
+            # override automatic detection; the same source stays in memory.
+            page.select_option("#chatModeSelector","group")
             first_named=page.locator(".talk.you .sender-name").first
-            if first_named.count()!=1:raise AssertionError("Incoming sender label missing")
+            if first_named.count()!=1:raise AssertionError("Group override did not show speaker")
             avatar=page.locator(".talk.you .icon").first
             balloon=page.locator(".talk.you .balloon").first
             sr=first_named.bounding_box();br=balloon.bounding_box();ar=avatar.bounding_box()
-            if sr["y"]>=br["y"] or abs(sr["x"]-br["x"])>1:raise AssertionError("name misaligned")
+            if sr["y"]>=br["y"] or abs(sr["x"]-br["x"])>1:raise AssertionError("group name misaligned")
+            page.select_option("#chatModeSelector","direct")
+            if page.locator(".talk.you .sender-name").count():
+                raise AssertionError("Direct override still shows group speaker")
+            page.select_option("#chatModeSelector","auto")
+            if page.locator(".talk.you .sender-name").count():
+                raise AssertionError("Auto wrongly classifies a two-speaker direct chat")
             if width<=600 and (ar["width"]!=28 or ar["height"]!=28):
                 raise AssertionError(f"avatar size not screenshot-calibrated: {ar}")
             row_count=page.locator(".talk").count()
