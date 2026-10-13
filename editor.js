@@ -119,7 +119,7 @@ const avatar=speaker=>doc.participants.find(p=>p.name===speaker)?.avatar||'./def
 function mediaKind(it){
  // An absent sticker is NOT a missing photograph. Preserve the original
  // exclamation-mark stamp asset even if a sticker was later bound to media.
- if(/^\[スタンプ\]$/.test(it.content))return 'stamp';
+ if(/^\[スタンプ\]$/.test(it.content)||/^\[(?:stk|stamp|sticker)[_-][^\]]+\.(?:svg|png|gif|webp|jpe?g)\]$/i.test(it.content))return 'stamp';
  if(it.media?.data){
    if(it.media.mime.startsWith('image/'))return 'image';
    if(it.media.mime.startsWith('video/'))return 'video';
@@ -321,7 +321,7 @@ on('inlineMediaInput','change',async e=>{
    if(target.personIndex!==null){if(d.participants[target.personIndex])d.participants[target.personIndex].avatar=data;}
    else{const it=d.items.find(x=>x.id===target.itemId);if(it){
     it.media={data,mime:safeMime,name:file.name};it.type='attachment';
-    it.content=it.content==='[スタンプ]'?'[スタンプ]':safeMime.startsWith('image/')?'[写真]':safeMime.startsWith('video/')?'[動画]':'[ファイル]';
+    it.content=mediaKind(it)==='stamp'?it.content:safeMime.startsWith('image/')?'[写真]':safeMime.startsWith('video/')?'[動画]':'[ファイル]';
    }}
   });status('ローカル素材を割り当てました');
  }catch(err){status('素材読込に失敗: '+err.message,true);}
