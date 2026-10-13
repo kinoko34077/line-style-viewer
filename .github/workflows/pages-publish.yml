@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout accepted main
         uses: actions/checkout@v4
+      - name: Regression gate before publishing public site
+        run: node --test tests/*.test.cjs
       - name: Stage only static public application assets
         run: |
           mkdir -p _site
