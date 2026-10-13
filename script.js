@@ -165,7 +165,7 @@ function parseMultiline(text) {
   const isMetadata = line =>
     /^\[LINE\]\s*.+(?:との|の)トーク履歴\s*$/.test(line) ||
     /^保存日時\s*[:：]\s*.+$/.test(line) ||
-    /^# (?:user|icon):/.test(line);
+    /^# (?:user|icon|system-json|entry-json):/.test(line);
   const lastIsMessage = () =>
     result.length > 0 && /^"?\d{1,2}:\d{2}\t[^\t]*\t/.test(result[result.length - 1]);
 
@@ -290,7 +290,25 @@ function parseText(text) {
     }
     if (/^保存日時\s*[:：]\s*.+$/.test(trimmed)) continue;
 
-    if (line.startsWith('# user:')) {
+    if (line.startsWith('# system-json:') || line.startsWith('# entry-json:')) {
+      const isSystem = line.startsWith('# system-json:');
+      try {
+        const data = JSON.parse(line.slice(isSystem ? 14 : 13).trim());
+        if (data && typeof data === 'object' && typeof data.content === 'string') {
+          const speaker = typeof data.speaker === 'string' ? data.speaker : '';
+          currentSection.push({
+            type: isSystem ? 'system' : ['text','attachment','call'].includes(data.kind) ? data.kind : 'text',
+            name: isSystem ? '' : speaker,
+            time: typeof data.time === 'string' ? data.time : '',
+            content: data.content
+          });
+          previousSpeaker = null;
+        }
+      } catch {
+        currentSection.push({type:'text',name:'',time:'',content:line});
+        previousSpeaker = null;
+      }
+    } else if (line.startsWith('# user:')) {
       meta.user = line.slice(7).trim();
     } else if (line.startsWith('# icon:')) {
       const declaration = line.slice(7);
