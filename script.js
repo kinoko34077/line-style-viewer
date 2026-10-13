@@ -140,21 +140,24 @@ function parseMultiline(text) {
 }
 
 function getCallKind(value) {
-  const text = value.trim();
-  // Match LINE-generated call outcomes, not ordinary sentences mentioning calls.
+  // iOS text exports often prefix call records with the symbol "☎".
+  const text = value.trim().replace(/^☎\s*/, '');
   if (/^\[?不在着信(?:[（(](?:音声|ビデオ)通話[）)])?\]?$/.test(text)) return 'missed';
-  if (/^(?:応答なし|応答がありません|着信なし)$/.test(text)) return 'unanswered';
-  if (/^(?:キャンセル|通話をキャンセルしました)$/.test(text)) return 'cancelled';
+  if (/^(?:応答なし|応答がありません|着信なし|通話に応答がありませんでした)[。]?$/.test(text)) return 'unanswered';
+  if (/^(?:キャンセル|通話をキャンセルしました)[。]?$/.test(text)) return 'cancelled';
   if (/^(?:(?:音声|ビデオ)?通話時間)[\s:：]*\d{1,2}:\d{2}(?::\d{2})?$/.test(text)) return 'duration';
   if (/^(?:音声|ビデオ)通話$/.test(text)) return 'duration';
-  if (/^(?:(?:音声|ビデオ)?通話)(?:を開始しました|を終了しました|が終了しました)$/.test(text)) return 'duration';
+  if (/^(?:(?:音声|ビデオ)?通話)(?:を開始しました|を終了しました|が終了しました)[。]?$/.test(text)) return 'duration';
   return null;
 }
 
-function isUnsendNotice(value) {
-  // Cancellation has a defined LINE-export wording. A merely blank sender
-  // or a message *mentioning* the phrase is not proof of a service notice.
-  return /^(?:[^\n\t]{1,80}が)?メッセージ(?:の送信)?を取り消しました。?$/.test(value.trim());
+function isSystemNotice(value, senderName) {
+  const text = value.trim();
+  // LINE unsend notices have no message sender in the text export.
+  if (!senderName.trim() &&
+      /^(?:[^\n\t]{1,80}が)?メッセージ(?:の送信)?を取り消しました[。]?$/.test(text)) return true;
+  // Group calls produce a room event, rather than a sender-sided call card.
+  return /^グループ(?:音声|ビデオ)?通話が(?:開始|終了)されました[。]?$/.test(text);
 }
 
 function parseText(text) {
@@ -197,7 +200,7 @@ function parseText(text) {
       const callKind = getCallKind(content);
       // Content semantics take precedence over absent sender metadata.
       // A nameless text/file row must not become a centered system pill.
-      const type = isUnsendNotice(content)
+      const type = isSystemNotice(content, name)
         ? 'system'
         : callKind ? 'call'
           : /^\[.*\]$/.test(content) ? 'attachment' : 'text';
@@ -314,7 +317,7 @@ function renderChat({ meta, items }) {
       } else if (item.content === '[スタンプ]') {
         contentHTML = '<img class="stamp-fallback" src="./default/default-stamp.png" alt="スタンプ（画像データなし）">';
       } else if (item.type === 'call') {
-        const safeLabel = escapeHtml(item.content.replace(/^\[|\]$/g, ''));
+        const safeLabel = escapeHtml(item.content.replace(/^☎\s*/, '').replace(/^\[|\]$/g, ''));
         contentHTML = `<div class="call-card" role="group" aria-label="通話履歴"><span class="call-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.56 3.57.56a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.19 2.45.56 3.57a1 1 0 01-.25 1.02z"/></svg></span><span class="call-label">${safeLabel}</span></div>`;
       } else {
         contentHTML = escapeHtml(item.content.replace(/^"|"$/g, '')).replace(/\n/g, '<br>');
