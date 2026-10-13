@@ -223,13 +223,13 @@ body {
 }
 
 .talk.you .balloon::after {
-  left: -9px;
+  left: -8px;
   background: #fff;
   clip-path: path("M0 1 C4 4 9 3 15 2 L15 15 C11 12 6 8 0 1 Z");
 }
 
 .talk.me .balloon::after {
-  right: -9px;
+  right: -8px;
   background: #a1e96c;
   clip-path: path("M16 1 C12 4 7 3 1 2 L1 15 C5 12 10 8 16 1 Z");
 }
