@@ -92,11 +92,34 @@ def main():
             assert undone["side"]=="you"
             page.click("#redoButton")
             assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="system"
+            # Touch-flavoured PointerEvents exercise left/right drop handling.
+            # The iPhone-specific physical event/OS rendering remains a
+            # separate true WebKit/Safari delivery check.
+            def touch_move(side):
+                page.evaluate("""({id, side}) => {
+                    const row=[...document.querySelectorAll('[data-entry-id]')].find(el=>el.dataset.entryId===id);
+                    const grip=row.querySelector('[data-drag-handle]'),r=grip.getBoundingClientRect();
+                    const container=document.getElementById('chatContainer').getBoundingClientRect();
+                    const x=r.x+r.width/2,y=r.y+r.height/2;
+                    const target=side==='you'?container.left+container.width*.10:
+                                 container.left+container.width*.90;
+                    const dispatch=(type,px,py)=>grip.dispatchEvent(new PointerEvent(type,{
+                        bubbles:true,button:0,buttons:type==='pointerup'?0:1,
+                        pointerId:55,pointerType:'touch',clientX:px,clientY:py
+                    }));
+                    dispatch('pointerdown',x,y);
+                    dispatch('pointermove',target,y+30);
+                    dispatch('pointerup',target,y+30);
+                }""",{"id":peerId,"side":side})
+            touch_move("you")
+            assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="you"
+            touch_move("me")
+            assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="me"
             page.wait_for_function("document.querySelector('#sourceStatus').textContent.includes('自動保存')",timeout=15000)
             count=len(project(page)["items"])
             page.reload();page.wait_for_function("!!window.talkEditor && window.talkEditor.getProject().title==='制作中のトーク'",timeout=15000)
             assert len(project(page)["items"])==count
-            assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="system"
+            assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="me"
             page.click("#menuToggle");page.click('[data-toggle-section="editorSettings"]')
             page.set_input_files("#projectFileInput",{"name":"reimport.json","mimeType":"application/json","buffer":json.dumps(exported,ensure_ascii=False).encode("utf-8")})
             page.wait_for_function("window.talkEditor.getProject().items.length>0")
