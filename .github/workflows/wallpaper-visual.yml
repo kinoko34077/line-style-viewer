@@ -6,6 +6,10 @@ on:
       - index.html
       - script.js
       - style.css
+      - editor.js
+      - editor.css
+      - txt-export.js
+      - default/**
       - tools/verify_wallpaper_browser.py
       - .github/workflows/wallpaper-visual.yml
   workflow_dispatch:

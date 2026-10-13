@@ -699,3 +699,24 @@ test('unquoted multiline markup is escaped, not treated as system or HTML', () =
   assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;<br>次の行/);
   assert.equal((html.match(/class="system"/g)||[]).length,0);
 });
+
+test('complete quoted body keeps embedded date and timestamp-shaped lines in the same message', () => {
+ const parser=loadParser();
+ const raw=[
+   '[LINE] テストとのトーク履歴',
+   '2026/10/13(火)',
+   '12:00\tA\t"1行目',
+   '2025/01/02(木)',
+   '13:14\tB\tこれは引用文中の発言',
+   'ここまで引用"',
+   '12:01\tB\t実際の2件目'
+ ].join('\n');
+ const records=parser.parseMultiline(raw);
+ const parsed=parser.parseText(records);
+ assert.deepEqual(Array.from(parsed.items.map(i=>i.type)),['date','text','text']);
+ assert.equal(parsed.items[1].name,'A');
+ assert.equal(parsed.items[1].content,
+   '1行目\n2025/01/02(木)\n13:14\tB\tこれは引用文中の発言\nここまで引用');
+ assert.equal(parsed.items[2].name,'B');
+ assert.equal(parsed.items[2].content,'実際の2件目');
+});

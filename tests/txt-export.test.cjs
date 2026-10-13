@@ -77,3 +77,26 @@ test('year-specific display dates normalize to source dates and reject impossibl
  assert.equal(lineDate('2025/02/29(土)',2026),null);
  assert.equal(bodyText('A\n"B"'),'"A\n""B"""');
 });
+
+test('a bound image sticker is still exported and reimported as a stamp, not a photograph',()=>{
+ const doc={title:'ステッカー',self:'自分',participants:[{name:'自分'},{name:'相手'}],items:[
+   item('attachment','you','相手','11:01','[スタンプ]',{name:'sticker.png',mime:'image/png',data:'data:image/png;base64,AAAA'}),
+   item('attachment','you','相手','11:02','[写真]',{name:'photo.png',mime:'image/png',data:'data:image/png;base64,AAAA'})
+ ]};
+ const txt=createLineTxt(doc,new Date(2026,9,14));
+ assert.match(txt,/11:01\t相手\t\[スタンプ\]/);
+ assert.match(txt,/11:02\t相手\t\[写真\]/);
+ assert.deepEqual(Array.from(parse(txt).items.map(i=>i.content)),['[スタンプ]','[写真]']);
+ assert.equal(doc.items[0].content,'[スタンプ]');
+});
+
+test('legacy sticker filename from sample TXT remains a sticker after image assignment',()=>{
+ const doc={title:'テスト',self:'kino',participants:[{name:'kino'},{name:'taro'}],items:[
+   item('attachment','you','taro','22:36','[stk_2345.svg]',{
+      name:'replaced-sticker.png',mime:'image/png',data:'data:image/png;base64,AAAA'
+   })
+ ]};
+ const txt=createLineTxt(doc,new Date(2026,9,14));
+ assert.match(txt,/22:36\ttaro\t\[stk_2345\.svg\]/);
+ assert.equal(parse(txt).items[0].content,'[stk_2345.svg]');
+});

@@ -213,7 +213,103 @@ def main():
             page.set_input_files("#projectFileInput",{"name":"bad.json","mimeType":"application/json","buffer":b"{not-json"})
             page.wait_for_function("document.querySelector('#sourceStatus').dataset.state==='error'")
             assert project(page)["title"]=="制作中のトーク"
+            assert page.locator("#editorErrorToast").is_visible()
+            # Oversized projects must be rejected BEFORE File.text is called,
+            # to avoid an unnecessary 120MB+ allocation on mobile Safari.
+            rejected=page.evaluate("""async () => {
+                let read=false;
+                const before=JSON.stringify(window.talkEditor.getProject());
+                await window.talkEditor.importProject({
+                    size:130*1024*1024, text:async()=>{read=true;return '{}';}
+                });
+                return {read,unchanged:before===JSON.stringify(window.talkEditor.getProject())};
+            }""")
+            assert not rejected["read"] and rejected["unchanged"],rejected
+            assert page.locator("#editorErrorToast").is_visible()
             page.click("#settingsClose")
+            # Audit: a date chip is visually shortened in the current year,
+            # but opening and closing inline editing must NOT erase the year.
+            original=project(page)
+            canonical=page.evaluate("() => new Date().getFullYear()+'/10/13(火)'")
+            auditDoc={**original,"items":[
+                {"id":"same-date-id","type":"date","side":"system","speaker":"",
+                 "content":canonical,"time":"","media":None,"previousType":"text","callKind":""}
+            ]}
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",auditDoc)
+            pill=page.locator(".centered-entry [data-edit-body]").first
+            assert pill.inner_text()=="10/13(火)"
+            pill.dblclick()
+            assert pill.inner_text()==canonical
+            pill.press("Tab")
+            assert project(page)["items"][0]["content"]==canonical, "doubletap/blur erased date year"
+            assert page.locator(".centered-entry [data-edit-body]").first.inner_text()=="10/13(火)"
+            # A changed short date retains the original year in stored data.
+            pill=page.locator(".centered-entry [data-edit-body]").first
+            pill.dblclick();pill.fill("9/20(日)");pill.press("Tab")
+            new_date=project(page)["items"][0]["content"]
+            assert new_date.endswith("/09/20(日)") and new_date[:4]==canonical[:4],new_date
+            # Center date dropped into own side becomes an ordinary text
+            # message, not an invisible side update while still centered.
+            page.evaluate("""() => {
+                const row=document.querySelector('.centered-entry'),target=row.querySelector('.edit-system');
+                const r=target.getBoundingClientRect(),c=document.querySelector('#chatContainer').getBoundingClientRect();
+                const x=r.x+r.width/2,y=r.y+r.height/2,dest=c.right-c.width*.10;
+                const fire=(type,px,py)=>target.dispatchEvent(new PointerEvent(type,{
+                    bubbles:true,pointerType:'mouse',pointerId:480,button:0,
+                    buttons:type==='pointerup'?0:1,clientX:px,clientY:py
+                }));
+                fire('pointerdown',x,y);fire('pointermove',dest,y+12);fire('pointerup',dest,y+12);
+            }""")
+            moved=project(page)["items"][0]
+            assert moved["side"]=="me" and moved["type"]=="text",moved
+            # Duplicate imported IDs must not make the second item edit/delete
+            # target the first. A malformed null item must reject atomically.
+            dupe={"version":1,"title":"重複ID検証","self":"自分","mode":"direct",
+                "scale":120,"theme":"normal",
+                "participants":[{"name":"自分","avatar":""},{"name":"相手","avatar":""}],
+                "items":[
+                    {"id":"dupe-id","type":"text","side":"me","speaker":"自分",
+                     "content":"一行目","time":"10:01"},
+                    {"id":"dupe-id","type":"text","side":"me","speaker":"自分",
+                     "content":"二行目","time":"10:02"}
+                ]}
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",dupe)
+            rows=project(page)["items"]
+            assert len(rows)==2 and rows[0]["id"]!=rows[1]["id"],rows
+            second=page.locator('[data-edit-body]').nth(1)
+            second.dblclick();second.fill("二行目だけ編集");second.press("Tab")
+            assert [i["content"] for i in project(page)["items"]]==["一行目","二行目だけ編集"]
+            assert page.evaluate("""() => {
+                const before=JSON.stringify(window.talkEditor.getProject());
+                try{
+                    const p=window.talkEditor.getProject();p.items=[null];
+                    window.talkEditor.replaceProject(p);
+                    return false;
+                }catch{return JSON.stringify(window.talkEditor.getProject())===before;}
+            }""")
+            # Legacy sample [stk_2345.svg] must be visually treated as a
+            # sticker, not a photograph. A non-image file must be rejected.
+            legacy={**original,"items":[
+                {"id":"legacy-sticker-1","type":"attachment","side":"you",
+                 "speaker":"相手","content":"[stk_2345.svg]",
+                 "time":"22:36","media":None,"previousType":"text","callKind":""}
+            ]}
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",legacy)
+            mark=page.locator(".unassigned-stamp").first
+            assert mark.count()==1
+            assert mark.locator("img").get_attribute("src")=="./default/default-stamp.png"
+            mark.click()
+            page.set_input_files("#inlineMediaInput",{"name":"not-image.pdf",
+                "mimeType":"application/pdf","buffer":b"not an image"})
+            assert not project(page)["items"][0]["media"]
+            assert page.locator("#editorErrorToast").is_visible()
+            page.locator(".unassigned-stamp").first.click()
+            page.set_input_files("#inlineMediaInput",{"name":"valid.png",
+                "mimeType":"image/png","buffer":PNG})
+            page.wait_for_function("""() => !!window.talkEditor.getProject().items[0].media""")
+            assert project(page)["items"][0]["content"]=="[stk_2345.svg]"
+            assert page.locator(".bound-stamp img").count()==1
+            page.evaluate("p=>window.talkEditor.replaceProject(p)",original)
             assert not errors,errors
             assert page.evaluate("document.documentElement.scrollWidth<=window.innerWidth")
             if width==390:page.screenshot(path=str(OUT/"editor_390.png"))

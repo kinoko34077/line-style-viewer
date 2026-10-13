@@ -23,20 +23,32 @@ function sanitize(input){
  d.mode=['auto','direct','group'].includes(input.mode)?input.mode:'auto';
  d.theme=['normal','white','black'].includes(input.theme)?input.theme:'normal';
  d.scale=Math.min(160,Math.max(80,Number(input.scale)||120));
- d.participants=input.participants.slice(0,150).map(p=>({name:String(p.name||'').slice(0,100),
-   avatar:typeof p.avatar==='string'&&allowedMedia.test(p.avatar)&&p.avatar.startsWith('data:image/')?p.avatar:''})).filter(p=>p.name);
+ d.participants=input.participants.slice(0,150).map(p=>{if(!p||typeof p!=='object')throw Error('話者の形式が不正です');return {name:String(p.name||'').slice(0,100),
+   avatar:typeof p.avatar==='string'&&allowedMedia.test(p.avatar)&&p.avatar.startsWith('data:image/')?p.avatar:''};}).filter(p=>p.name);
  if(!d.participants.some(p=>p.name===d.self))d.participants.unshift({name:d.self,avatar:''});
+ const seenIds=new Set();
  d.items=input.items.map(it=>{
+   if(!it||typeof it!=='object'||Array.isArray(it))throw Error('メッセージの形式が不正です');
+   let id=typeof it.id==='string'&&/^[\w-]{3,100}$/.test(it.id)?it.id:identifier();
+   while(seenIds.has(id))id=identifier();
+   seenIds.add(id);
    const type=['text','attachment','date','system','call'].includes(it.type)?it.type:'text';
    const media=it.media&&allowedMedia.test(it.media.data||'')?{data:it.media.data,mime:String(it.media.mime||''),name:String(it.media.name||'ファイル').slice(0,180)}:null;
-   return {id:typeof it.id==='string'&&/^[\w-]{3,100}$/.test(it.id)?it.id:identifier(),
+   return {id,
     type,side:['me','you','system'].includes(it.side)?it.side:'you',
     speaker:String(it.speaker??it.name??'').slice(0,100),time:String(it.time||'').slice(0,50),
     content:String(it.content||'').slice(0,200000),media,callKind:String(it.callKind||''),previousType:String(it.previousType||'text')};
  });
  return d;
 }
-function status(s,error=false){const e=E('sourceStatus');if(e){e.textContent=s;e.dataset.state=error?'error':'ready';}}
+function status(s,error=false){
+ const e=E('sourceStatus');
+ if(e){e.textContent=s;e.dataset.state=error?'error':'ready';}
+ // Error status cannot live solely in the hidden settings pane:
+ // autosave quota failures need an always-visible, screenreader-announced alert.
+ const toast=E('editorErrorToast');
+ if(toast){toast.hidden=!error;if(error)toast.textContent=s;}
+}
 function buttons(){if(E('undoButton'))E('undoButton').disabled=!history.length;if(E('redoButton'))E('redoButton').disabled=!future.length;}
 function mutate(fn,option={}){
  touched=true;
@@ -68,14 +80,24 @@ async function readCache(){
   r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);
   tx.oncomplete=()=>database.close();
  });}
+// Serialize cache writes, so a delayed earlier IndexedDB transaction
+// cannot finish after and replace a newer edited document.
+let saveQueue=Promise.resolve();
 function schedule(){
  const n=++dbCounter;
  clearTimeout(timer);
  timer=setTimeout(async()=>{
   if(n!==dbCounter)return;
   const data=snapshot();
-  try{await saveCache(data);status('ブラウザ内に自動保存しました');}
-  catch{
+  saveQueue=saveQueue.catch(()=>{}).then(()=>{
+   if(n!==dbCounter)return;
+   return saveCache(data);
+  });
+  try{
+   await saveQueue;
+   if(n===dbCounter)status('ブラウザ内に自動保存しました');
+  }catch{
+   if(n!==dbCounter)return;
    try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);status('簡易キャッシュに自動保存しました');}
    catch{status('自動保存ができません。右上の保存でJSONを書き出してください',true);}
   }
@@ -97,7 +119,7 @@ const avatar=speaker=>doc.participants.find(p=>p.name===speaker)?.avatar||'./def
 function mediaKind(it){
  // An absent sticker is NOT a missing photograph. Preserve the original
  // exclamation-mark stamp asset even if a sticker was later bound to media.
- if(/^\[スタンプ\]$/.test(it.content))return 'stamp';
+ if(/^\[スタンプ\]$/.test(it.content)||/^\[(?:stk|stamp|sticker)[_-][^\]]+\.(?:svg|png|gif|webp|jpe?g)\]$/i.test(it.content))return 'stamp';
  if(it.media?.data){
    if(it.media.mime.startsWith('image/'))return 'image';
    if(it.media.mime.startsWith('video/'))return 'video';
@@ -203,7 +225,7 @@ function exportTxt(){
 }
 async function importJson(file){
  if(!file)return;
- try{const text=await file.text();if(text.length>120*1024*1024)throw Error('ファイルサイズ超過');
+ try{if(file.size>120*1024*1024)throw Error('ファイルサイズ超過');const text=await file.text();if(text.length>120*1024*1024)throw Error('ファイルサイズ超過');
   const parsed=sanitize(JSON.parse(text));
   mutate(()=>{doc=parsed;});status('保存したトークを読み込みました');
  }catch(e){status('読み込み失敗: '+e.message,true);}
@@ -282,13 +304,13 @@ on('settingsBackdrop','click',e=>{
  const tile=e.target.closest('[data-pick-media]');if(tile)pick(tile.dataset.pickMedia,null);
 });
 const mimeAllowed=/^(image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|audio\/(?:mpeg|ogg|wav))$/;
-function pick(itemId,personIndex){mediaTarget={itemId,personIndex};const picker=E('inlineMediaInput');picker.accept=personIndex===null?'':'image/png,image/jpeg,image/gif,image/webp';picker.value='';picker.click();}
+function pick(itemId,personIndex){mediaTarget={itemId,personIndex};const picker=E('inlineMediaInput');picker.accept=(personIndex!==null||(itemId&&mediaKind(itemById(itemId))==='stamp'))?'image/png,image/jpeg,image/gif,image/webp':'';picker.value='';picker.click();}
 on('inlineMediaInput','change',async e=>{
  const file=e.target.files[0],target=mediaTarget;mediaTarget=null;
  if(!file||!target)return;
  if(file.size>15*1024*1024){status('15MB以下のファイルを指定してください',true);return;}
  const mime=file.type||'application/octet-stream';
- if(target.personIndex!==null&&!/^image\/(?:png|jpeg|gif|webp)$/.test(mime)){status('アイコンはPNG/JPEG/GIF/WebPの画像のみ指定できます',true);return;}
+ if((target.personIndex!==null||(target.itemId&&mediaKind(itemById(target.itemId))==='stamp'))&&!/^image\/(?:png|jpeg|gif|webp)$/.test(mime)){status('アイコン・スタンプにはPNG/JPEG/GIF/WebP画像を指定してください',true);return;}
  try{
   let data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>rej(r.error);r.readAsDataURL(file);});
   // Unknown document types remain local generic downloads, never executable
@@ -299,7 +321,7 @@ on('inlineMediaInput','change',async e=>{
    if(target.personIndex!==null){if(d.participants[target.personIndex])d.participants[target.personIndex].avatar=data;}
    else{const it=d.items.find(x=>x.id===target.itemId);if(it){
     it.media={data,mime:safeMime,name:file.name};it.type='attachment';
-    it.content=it.content==='[スタンプ]'?'[スタンプ]':safeMime.startsWith('image/')?'[写真]':safeMime.startsWith('video/')?'[動画]':'[ファイル]';
+    it.content=mediaKind(it)==='stamp'?it.content:safeMime.startsWith('image/')?'[写真]':safeMime.startsWith('video/')?'[動画]':'[ファイル]';
    }}
   });status('ローカル素材を割り当てました');
  }catch(err){status('素材読込に失敗: '+err.message,true);}
@@ -311,7 +333,15 @@ function readEdit(el){return el.hasAttribute('data-edit-body')?el.innerText.repl
 function flush(el,withoutRender=false){
  if(!editorNode(el))return;
  const id=el.dataset.editBody||el.dataset.editTime,field=el.hasAttribute('data-edit-body')?'content':'time';
- const it=itemById(id),v=readEdit(el);
+ const it=itemById(id);
+ let v=readEdit(el);
+ if(it?.type==='date'&&field==='content'){
+   const short=/^(\d{1,2})\/(\d{1,2})(\([^)]*\))?$/.exec(v.trim());
+   if(short){
+     const oldYear=/^(\d{4})\//.exec(it.content)?.[1]||new Date().getFullYear();
+     v=`${oldYear}/${String(Number(short[1])).padStart(2,'0')}/${String(Number(short[2])).padStart(2,'0')}${short[3]||''}`;
+   }
+ }
  if(it&&it[field]!==v)mutate(d=>{const x=d.items.find(i=>i.id===id);if(x)x[field]=v;},{noRender:withoutRender});
 }
 transcript.addEventListener('focusin',e=>{if(editorNode(e.target))focusStart.set(e.target,readEdit(e.target));});
@@ -321,6 +351,8 @@ transcript.addEventListener('focusout',e=>{
  if(editorNode(el)){
    flush(el);
    if(el.isConnected && el.hasAttribute('data-edit-body')){
+     const item=itemById(el.dataset.editBody);
+     if(item?.type==='date')el.textContent=displayDateLabel(item.content);
      el.contentEditable='false';el.removeAttribute('tabindex');
    }else if(el.isConnected && el.hasAttribute('data-edit-time')){
      el.readOnly=true;el.tabIndex=-1;
@@ -342,9 +374,14 @@ transcript.addEventListener('paste',e=>{
  const n=document.createTextNode(t);r.insertNode(n);r.setStartAfter(n);r.collapse(true);sel.removeAllRanges();sel.addRange(r);}}
 });
 function selectEntry(id) {
+ if(selectedEntryId===id)return;
+ const previous=transcript.querySelector('.editable-entry.is-selected');
+ if(previous)previous.classList.remove('is-selected');
  selectedEntryId=id;
- for(const row of transcript.querySelectorAll('[data-entry-id]'))
-  row.classList.toggle('is-selected',row.dataset.entryId===id);
+ if(id){
+  const next=transcript.querySelector(`[data-entry-id="${CSS.escape(id)}"]`);
+  if(next)next.classList.add('is-selected');
+ }
 }
 function enableInline(target,row){
  if(!row)return;
@@ -353,6 +390,10 @@ function enableInline(target,row){
  if(!node)return;
  selectEntry(row.dataset.entryId);
  if(node.hasAttribute('data-edit-body')){
+   const item=itemById(row.dataset.entryId);
+   // Show the canonical full year only while editing. Double-tapping and
+   // blurring an unchanged current-year date must never strip its year.
+   if(item?.type==='date')node.textContent=item.content;
    node.contentEditable='true';
    node.tabIndex=0;
  }else{
@@ -490,6 +531,7 @@ transcript.addEventListener('pointerup',e=>{
    it.side='system';it.speaker='';
   }else{
    if(it.type==='system')it.type=['text','attachment','call'].includes(it.previousType)?it.previousType:'text';
+   if(it.type==='date')it.type='text';
    const oldSide=it.side;
    it.side=zone;
    // Keep each original group participant when moving only within the peer side.

@@ -169,15 +169,28 @@ function parseMultiline(text) {
   const lastIsMessage = () =>
     result.length > 0 && /^"?\d{1,2}:\d{2}\t[^\t]*\t/.test(result[result.length - 1]);
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
     const recordStart = isRecordStart(line);
     const dateStart = isDate(trimmed);
 
     if (buffer !== null) {
-      // A new timestamp/day after an unclosed quote begins a new message.
-      // Embedded export headers in *valid quoted bodies* stay as text.
-      if (!recordStart && !dateStart) {
+      // A valid quoted body may itself include a LINE timestamp or date.
+      // Look for its closing quote on a continuation line. If no close is
+      // present nearby, preserve the legacy malformed-quote recovery at the
+      // next real timestamp/day instead of swallowing the rest of the chat.
+      let closesLater = false;
+      if (recordStart || dateStart) {
+        for (let j = i; j < Math.min(lines.length, i + 40); j++) {
+          const candidate = lines[j];
+          if (!isRecordStart(candidate) && /(^|[^\\])"$/.test(candidate.trim())) {
+            closesLater = true;
+            break;
+          }
+        }
+      }
+      if ((!recordStart && !dateStart) || closesLater) {
         buffer += '\n' + line;
         if (/(^|[^\\])"$/.test(trimmed)) {
           result.push(buffer);
