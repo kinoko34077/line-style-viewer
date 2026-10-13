@@ -89,6 +89,8 @@ def run():
                 colors[theme]=data
             if len({data["sent"] for data in colors.values()})!=3:
                 raise AssertionError(f"theme bubble colors not distinct: {colors}")
+            # Restore the ORIGINAL cloud theme before before/after pixel comparison.
+            page.select_option("#themeSelector","normal")
             date_text=page.locator(".date-label").first.inner_text()
             from datetime import date
             expected_date="10/13(火)" if date.today().year==2026 else "2026年10月13日(火)"
