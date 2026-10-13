@@ -144,6 +144,14 @@ function normalizeQuotedRecord(line) {
   return unwrapped.endsWith('"') ? unwrapped.slice(0, -1) : unwrapped;
 }
 
+function normalizeQuotedBody(content) {
+  // After physical lines have been joined, quoted multiline bodies are
+  // transport delimiters, not visible text. Keep unmatched quote marks.
+  return content.length >= 2 && content.startsWith('"') && content.endsWith('"')
+    ? content.slice(1, -1).replace(/""/g, '"')
+    : content;
+}
+
 function getCallKind(value) {
   // iOS text exports often prefix call records with the symbol "☎".
   const text = value.trim().replace(/^☎\s*/, '');
@@ -212,7 +220,8 @@ function parseText(text) {
       // "12:00<TAB>メッセージの送信を取り消しました"
       // Three-field messages have a sender (possibly empty) and body.
       const name = fields.length >= 3 ? fields[1] : '';
-      const content = fields.length >= 3 ? fields.slice(2).join('\t') : fields[1];
+      const rawContent = fields.length >= 3 ? fields.slice(2).join('\t') : fields[1];
+      const content = normalizeQuotedBody(rawContent);
       const callKind = getCallKind(content);
       // Content semantics take precedence over absent sender metadata.
       // A nameless text/file row must not become a centered system pill.
@@ -350,7 +359,7 @@ function renderChat({ meta, items }) {
         const safeLabel = escapeHtml(item.content.replace(/^☎\s*/, '').replace(/^\[|\]$/g, ''));
         contentHTML = `<div class="call-card" role="group" aria-label="通話履歴"><span class="call-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.56 3.57.56a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.19 2.45.56 3.57a1 1 0 01-.25 1.02z"/></svg></span><span class="call-label">${safeLabel}</span></div>`;
       } else {
-        contentHTML = escapeHtml(item.content.replace(/^"|"$/g, '')).replace(/\n/g, '<br>');
+        contentHTML = escapeHtml(item.content).replace(/\n/g, '<br>');
       }
 
       // Incoming: avatar | white balloon | time.
