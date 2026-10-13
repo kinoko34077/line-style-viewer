@@ -309,7 +309,7 @@ transcript.addEventListener('pointerdown',e=>{
  if(!row||e.button>0)return;
  e.preventDefault();
  drag={id:row.dataset.entryId,row,x:e.clientX,y:e.clientY,zone:row.dataset.side,moved:false};
- handle.setPointerCapture?.(e.pointerId);
+ try{handle.setPointerCapture?.(e.pointerId);}catch{/* Synthetic or unsupported pointers still reorder via bubble events. */}
  row.classList.add('is-moving');document.body.classList.add('editor-dragging');
  guide=document.createElement('div');guide.className='editor-drop-guide';
  guide.innerHTML='<span>相手</span><span>システム</span><span>自分</span>';
