@@ -17,7 +17,7 @@
 \`editor.js\`が持つ独立した版付き文書 \`{version:1,title,self,mode,scale,theme,participants,items}\`。
 各項目 \`{id,type,side,speaker,time,content,media,previousType,callKind}\` のうち \`type\` は text / attachment / date / system / call、\`side\` は me / you / system。参加者は名前とローカル画像データを持つ。\`media\` は \`{data,mime,name}\`。IDで対応付け、表示順は items の順序を正本とする。相手側で話者が複数いる場合、話者の表示名・アイコンは参加者設定に従い、既存LINEグループ表示を維持。
 
-TXTインポートでは既存 \`parseMultiline\` → \`parseText\` を使用し、文書へ**コピー**する。元LINE記録にない写真・動画・ファイルの内容は未指定のまま示し、割り当て時だけローカルのFileReaderで紐付ける。受入形式はPNG/JPEG/GIF/WebP、MP4/WebM、PDF、TXT、ZIP、MP3/OGG/WAVで、入力ファイル1件15MB以下。インポートした画像の埋込データやローカルJSON書出しにはユーザーが選んだ実データが入る。公開リポジトリ、LINEサーバ、ChatGPTのメッセージには自動送信しない。
+TXTインポートでは既存 \`parseMultiline\` → \`parseText\` を使用し、文書へ**コピー**する。元LINE記録にない写真・動画・ファイルの内容は未指定のまま示し、割り当て時だけローカルのFileReaderで紐付ける。画像／動画としてプレビューする形式はPNG/JPEG/GIF/WebP、MP4/WebM。PDF、TXT、ZIP、MP3/OGG/WAVは既知形式のファイルとして、その他の拡張子やMIME種別も`application/octet-stream`の汎用ダウンロードへ変換して扱う（実行可能なHTMLとしてプレビューしない）。入力ファイル1件15MB以下。プロフィールアイコンの選択は安全なラスター画像に限定する。インポートした画像の埋込データやローカルJSON書出しにはユーザーが選んだ実データが入る。公開リポジトリ、LINEサーバ、ChatGPTのメッセージには自動送信しない。
 
 ## 永続化と復元
 
@@ -30,3 +30,5 @@ TXTインポートでは既存 \`parseMultiline\` → \`parseText\` を使用し
 \`tests/\`の旧TXTパーサ・表示回帰84件を壊さない。\`tools/verify_editor_browser.py\` は現物HTML/CSS/JSをChromiumで動かし、空の文書→入力→本文/時刻編集→各要素追加→画像/アイコン設定→プロフィール名→JSON書出し→Y/Xドラッグ→Undo/Redo→IndexedDB再起動復元→JSON取込まで検査。\`tools/verify_wallpaper_browser.py\` は約3000件の架空LINE TXTで背景・表示・画面幅を引き続き検証する。画像と会話内容を含む**ユーザー提供の本家スクリーンショットはリポジトリへコピーしない**。
 
 公開GitHub Pagesの反映と実機iPhone Safariでのドラッグ・ファイル参照の確認は別Issue #10で行う。ブラウザのタッチPointerEvent互換検査は実機Safariの完全な代替ではない。
+
+JSONプロジェクトの読込み上限は120MBで、形式・メッセージ数・埋込データURIを検証し、不正なJSONなら編集中の文書は維持する。外部の実行可能HTML等を埋込ブラウザ画面として表示しない。画像とデータの文字列によってブラウザメモリ使用量は変動する。
