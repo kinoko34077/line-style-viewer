@@ -136,7 +136,7 @@ def main():
             def touch_move(side):
                 page.evaluate("""({id, side}) => {
                     const row=[...document.querySelectorAll('[data-entry-id]')].find(el=>el.dataset.entryId===id);
-                    const grip=row.querySelector('.balloon'),r=grip.getBoundingClientRect();
+                    const grip=row.querySelector('.balloon, .edit-system'),r=grip.getBoundingClientRect();
                     const container=document.getElementById('chatContainer').getBoundingClientRect();
                     const x=r.x+r.width/2,y=r.y+r.height/2;
                     const target=side==='you'?container.left+container.width*.10:
