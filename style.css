@@ -477,9 +477,12 @@ body {
     margin-right: 3px;
   }
 
+  /* Calibrated with identical eight-character native LINE messages:
+     source photo bubble 425x101 at 2.5x screen scale ~= 170x40 logical px. */
   .balloon {
-    font-size: 15px;
-    padding: 8px 11px;
+    font-size: 17px;
+    line-height: 1.3;
+    padding: 9px 15px;
   }
 
   .source-status {

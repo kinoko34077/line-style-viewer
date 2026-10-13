@@ -219,7 +219,7 @@ test('message scale and read/time location remain consistent with native LINE re
   assert.match(css, /\.balloon\s*\{[^}]*line-height:\s*1\.42;[^}]*font-size:\s*15px;/);
   assert.match(css, /\.meta-inline\s*\{[^}]*font-size:\s*10px;/);
   assert.match(css, /\.date-label,[\s\S]*?\.system\s*\{[^}]*border-radius:\s*999px;/);
-  assert.match(css, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.balloon\s*\{[^}]*font-size:\s*15px;/);
+  assert.match(css, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.balloon\s*\{[^}]*font-size:\s*17px;[^}]*line-height:\s*1\.3;[^}]*padding:\s*9px 15px;/);
   assert.match(css, /\.call-copy\s*\{[^}]*flex-direction:\s*column;/);
   assert.match(css, /\.call-duration\s*\{[^}]*font-size:\s*12px;/);
 });
@@ -314,4 +314,14 @@ test('all bubble horn geometry respects the minimum mobile horizontal inset', ()
   assert.match(css,/\.talk\.you \.balloon::after\s*\{[^}]*left:\s*-8px;/);
   assert.match(css,/\.talk\.me \.balloon::after\s*\{[^}]*right:\s*-8px;/);
   assert.match(css,/\.talk\.you \.balloon::after,\s*\.talk\.me \.balloon::after\s*\{[^}]*width:\s*20px;/);
+});
+
+
+test('mobile text dimensions are explicitly calibrated from a matching native LINE screenshot', () => {
+  // The reference image is a source screenshot, not an app-wide style oracle.
+  // Both its messages have 8 Japanese characters; native bubble is ~170x40
+  // CSS-equivalent pixels after normalizing the image's actual 2.5x scale.
+  const mobile=css.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*)\}\s*$/);
+  assert.ok(mobile);
+  assert.match(mobile[1],/\.balloon\s*\{[^}]*font-size:\s*17px;[^}]*line-height:\s*1\.3;[^}]*padding:\s*9px 15px;/);
 });

@@ -1,0 +1,39 @@
+name: Compare native LINE screenshots
+
+on:
+  pull_request:
+    paths:
+      - tools/compare_native_line_pixels.py
+      - .github/workflows/visual-reference.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-overlays:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install image analysis and headless browser
+        run: |
+          python3 -m pip install --break-system-packages --quiet pillow numpy opencv-python-headless requests playwright
+          python3 -m playwright install chromium
+      - name: Validate silhouette metrics with a synthetic pair
+        run: python3 tools/compare_native_line_pixels.py --self-test
+      - name: Download published LINE examples and compare actual render
+        run: python3 tools/compare_native_line_pixels.py
+      - name: Save derived masks, overlay and measurements only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-pixel-comparison
+          path: |
+            visual-reference-result/metrics.json
+            visual-reference-result/*_overlay.png
+            visual-reference-result/*_reference_mask.png
+            visual-reference-result/*_viewer_mask.png
+            visual-reference-result/viewer.png
+          retention-days: 7
+          if-no-files-found: warn
