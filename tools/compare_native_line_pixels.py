@@ -3,6 +3,7 @@
 Numbers describe isolated shapes after normalization, never full UI equivalence.
 """
 import json
+import re
 import sys
 from pathlib import Path
 import cv2
@@ -85,11 +86,13 @@ def render_current_viewer():
         })""")
         bbox={key:page.locator(sel).bounding_box() for key,sel in [
             ("outgoing",".talk.me .balloon"),("incoming",".talk.you .balloon")]}
+        colors={key:page.locator(sel).evaluate("(el) => getComputedStyle(el).backgroundColor")
+                for key,sel in [("outgoing",".talk.me .balloon"),("incoming",".talk.you .balloon")]}
         page.screenshot(path=str(OUT/"viewer.png"))
         size=page.evaluate("document.documentElement.scrollWidth")
         browser.close()
     if size>440:raise ValueError("viewer overflow at 440px")
-    return bbox
+    return bbox,colors
 
 def download(url,path):
     import requests
@@ -101,7 +104,7 @@ def download(url,path):
     return im
 
 def run():
-    bbox=render_current_viewer()
+    bbox,computed_colors=render_current_viewer()
     viewer=Image.open(OUT/"viewer.png")
     source=OUT/"native_temporary"
     candidates=[
@@ -118,7 +121,8 @@ def run():
             for side in ("incoming","outgoing"):
                 seed=(round(seeds[side][0]*w),round(seeds[side][1]*h))
                 refcol=(255,255,255) if side=="incoming" else (143,233,95)
-                appcol=(255,255,255) if side=="incoming" else (161,233,108)
+                appcol=tuple(int(v) for v in re.findall(r"\d+",computed_colors[side])[:3])
+                if len(appcol)!=3:raise ValueError("Unrecognized computed bubble color")
                 native=mask(original,seed,refcol,35 if side=="incoming" else 48)
                 box=bbox[side]
                 appseed=(round(box["x"]+box["width"]/2),round(box["y"]+box["height"]-7))
