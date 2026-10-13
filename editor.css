@@ -97,8 +97,8 @@
   opacity: .25;
   touch-action: none;
 }
-.drag-grip { left: -7px; }
-.delete-entry { right: -7px; font-size: 16px; cursor: pointer; }
+.drag-grip { left: 0; }
+.delete-entry { right: 0; font-size: 16px; cursor: pointer; }
 .editable-entry:hover .drag-grip, .editable-entry:hover .delete-entry,
 .drag-grip:focus-visible, .delete-entry:focus-visible, .editable-entry.is-moving .drag-grip { opacity: 1; }
 .editor-dragging, .editor-dragging * { cursor: grabbing!important; }
