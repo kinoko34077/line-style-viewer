@@ -8,6 +8,8 @@ const clock=()=>new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-
 const today=()=>{const d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'('+'日月火水木金土'[d.getDay()]+')';};
 const blank=()=>({version:1,title:'トーク',self:'自分',mode:'direct',scale:120,theme:'normal',participants:[{name:'自分',avatar:''},{name:'相手',avatar:''}],items:[]});
 let doc=blank(),history=[],future=[],timer,dbCounter=0,loaded=false,touched=false,mediaTarget=null,drag=null;
+let selectedEntryId=null;
+let lastTap={id:null,at:0};
 // Keep repeated edits to large inline photos from multiplying memory without bound.
 function trimStack(stack){while(stack.length>1 && (stack.length>40 || stack.reduce((n,s)=>n+s.length,0)>32*1024*1024))stack.shift();}
 const snapshot=()=>JSON.stringify(doc);
@@ -123,13 +125,13 @@ function render(options={}){
  let prev=null;const html=[];
  for(const it of doc.items){
   const id=esc(it.id),center=it.side==='system'||it.type==='system'||it.type==='date';
-  const grip=`<button type="button" class="drag-grip" data-drag-handle aria-label="ドラッグして移動">⠿</button>`;
+  const grip='';
   const remove=`<button type="button" class="delete-entry" data-delete-id="${id}" aria-label="削除">×</button>`;
   const content=esc(it.content).replace(/\n/g,'<br>');
-  const inline=`<span class="inline-body" contenteditable="true" role="textbox" aria-multiline="true" data-edit-body="${id}">${it.type==='date'?esc(displayDateLabel(it.content)):content}</span>`;
+  const inline=`<span class="inline-body" contenteditable="false" role="textbox" aria-multiline="true" data-edit-body="${id}" aria-label="ダブルタップで編集">${it.type==='date'?esc(displayDateLabel(it.content)):content}</span>`;
   if(center){
    prev=null;
-   html.push(`<div class="editable-entry centered-entry" data-entry-id="${id}" data-side="system">${grip}<div class="${it.type==='date'?'date-label':'system'} edit-system">${inline}</div>${it.type==='date'?'':`<input aria-label="時刻" class="inline-time" data-edit-time="${id}" value="${esc(it.time)}">`}${remove}</div>`);
+   html.push(`<div class="editable-entry centered-entry${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="system"><div class="${it.type==='date'?'date-label':'system'} edit-system">${inline}${remove}</div>${it.type==='date'?'':`<input aria-label="時刻" class="inline-time" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1">`}</div>`);
    continue;
   }
   const mine=it.side==='me',m=/^\d{1,2}:\d{2}$/.test(it.time)?it.time:null;
@@ -145,10 +147,10 @@ function render(options={}){
     else balloon=`<div class="bound-file"><a href="${url}" download="${esc(it.media.name)}">▤ ${esc(it.media.name)}</a><button type="button" data-pick-media="${id}">変更</button></div>`;
    }else balloon=`<button type="button" class="unassigned-media" data-pick-media="${id}"><img src="./default/default-photo.png" alt=""><span>${kind==='image'?'画像':kind==='video'?'動画':'ファイル'}を指定</span></button>`;
   }
-  html.push(`<div class="editable-entry talk ${mine?'me':'you'}" data-entry-id="${id}" data-side="${it.side}"${grouped?' data-continuation="true"':''}>${grip}${icon}<div class="message-block-with-meta">${label}<div class="balloon${kind?' media-edit':''}">${balloon}</div><div class="meta-inline">${mine?'<span class="read">既読</span>':''}<input class="inline-time" aria-label="時刻" data-edit-time="${id}" value="${esc(it.time)}"></div></div>${remove}</div>`);
+  html.push(`<div class="editable-entry talk ${mine?'me':'you'}${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="${it.side}"${grouped?' data-continuation="true"':''}>${icon}<div class="message-block-with-meta">${label}<div class="balloon${kind?' media-edit':''}">${balloon}${remove}</div><div class="meta-inline">${mine?'<span class="read">既読</span>':''}<input class="inline-time" aria-label="時刻" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1"></div></div></div>`);
   prev={speaker:it.speaker,side:it.side,minute:m};
  }
- transcript.innerHTML=html.length?html.join(''):'<div class="editor-empty">下の入力欄からメッセージを作成できます。<br>＋から相手・日付・システムメッセージも追加できます。</div>';
+ transcript.innerHTML=html.length?html.join(''):'<div class="editor-empty">下の入力欄からトークを作成できます。<br>メッセージはダブルタップで編集、長押しで移動できます。<br><button type="button" id="emptyImportButton">LINE履歴（TXT/MD）を読み込む</button></div>';
  buttons();
  transcript.scrollTop=options.bottom||atEnd?transcript.scrollHeight:oldScroll;
 }
@@ -168,11 +170,26 @@ function send(){
  const it={id:identifier(),type:'text',side:speaker===doc.self?'me':'you',speaker,time:clock(),content:input.value.replace(/\r\n/g,'\n'),media:null,previousType:'text',callKind:''};
  mutate(d=>d.items.push(it),{bottom:true});input.value='';input.focus();
 }
-function focusBody(id){transcript.querySelector(`[data-edit-body="${id}"]`)?.focus();}
+function focusBody(id){
+ const target=transcript.querySelector(`[data-edit-body="${id}"]`);
+ if(target){target.contentEditable='true';target.setAttribute('tabindex','0');target.focus();}
+}
 function exportJson(){
  const blob=new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
  const link=document.createElement('a');link.href=url;link.download=doc.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,64)+'.linechat.json';
  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);status('JSONを書き出しました');
+}
+function exportTxt(){
+ if(!window.LineTxtExport) {status('TXT書出し機能を読み込めませんでした',true);return;}
+ const text=window.LineTxtExport.createLineTxt(doc);
+ const name=doc.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,64)||'トーク';
+ const blob=new Blob(['\\uFEFF'.replace('\\uFEFF','\uFEFF')+text],{type:'text/plain;charset=utf-8'});
+ const url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download=name+'.txt';
+ document.body.appendChild(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),3000);
+ if(E('saveFormatMenu'))E('saveFormatMenu').hidden=true;
+ status('LINE形式のTXTを書き出しました（画像本体・編集履歴はJSONのみ保持）');
 }
 async function importJson(file){
  if(!file)return;
@@ -200,10 +217,16 @@ function setIdentityAndMode(self,mode){
  });
 }
 window.talkEditor={loadParsed:importParsed,setIdentityAndMode,getProject:()=>JSON.parse(snapshot()),
- addItem,undo,redo,exportProject:exportJson,importProject:importJson,replaceProject:p=>mutate(()=>{doc=sanitize(p);}),render};
+ addItem,undo,redo,exportProject:exportJson,exportTxt,importProject:importJson,replaceProject:p=>mutate(()=>{doc=sanitize(p);}),render};
 const on=(id,event,fn)=>E(id)?.addEventListener(event,fn);
 on('undoButton','click',undo);on('redoButton','click',redo);
-on('saveButton','click',exportJson);on('exportProjectButton','click',exportJson);
+on('saveButton','click',()=>{
+ const menu=E('saveFormatMenu');if(menu)menu.hidden=!menu.hidden;
+});
+on('saveTxtButton','click',exportTxt);
+on('saveJsonButton','click',()=>{E('saveFormatMenu').hidden=true;exportJson();});
+on('exportTxtButton','click',exportTxt);
+on('exportProjectButton','click',exportJson);
 on('projectFileInput','change',e=>{importJson(e.target.files[0]);e.target.value='';});
 on('newProjectButton','click',()=>{
  if(doc.items.length&&!confirm('現在のトークを消して新規作成しますか？（Undoで戻せます）'))return;
@@ -277,7 +300,18 @@ function flush(el,withoutRender=false){
  if(it&&it[field]!==v)mutate(d=>{const x=d.items.find(i=>i.id===id);if(x)x[field]=v;},{noRender:withoutRender});
 }
 transcript.addEventListener('focusin',e=>{if(editorNode(e.target))focusStart.set(e.target,readEdit(e.target));});
-transcript.addEventListener('focusout',e=>{clearTimeout(typingTimer);flush(e.target);});
+transcript.addEventListener('focusout',e=>{
+ clearTimeout(typingTimer);
+ const el=e.target;
+ if(editorNode(el)){
+   flush(el);
+   if(el.isConnected && el.hasAttribute('data-edit-body')){
+     el.contentEditable='false';el.removeAttribute('tabindex');
+   }else if(el.isConnected && el.hasAttribute('data-edit-time')){
+     el.readOnly=true;el.tabIndex=-1;
+   }
+ }
+});
 transcript.addEventListener('input',e=>{
  if(!editorNode(e.target))return;
  clearTimeout(typingTimer);
@@ -292,10 +326,46 @@ transcript.addEventListener('paste',e=>{
  else{const sel=window.getSelection();if(sel?.rangeCount){const r=sel.getRangeAt(0);r.deleteContents();
  const n=document.createTextNode(t);r.insertNode(n);r.setStartAfter(n);r.collapse(true);sel.removeAllRanges();sel.addRange(r);}}
 });
+function selectEntry(id) {
+ selectedEntryId=id;
+ for(const row of transcript.querySelectorAll('[data-entry-id]'))
+  row.classList.toggle('is-selected',row.dataset.entryId===id);
+}
+function enableInline(target,row){
+ if(!row)return;
+ const node=target?.closest?.('[data-edit-body],[data-edit-time]') ||
+  row.querySelector('[data-edit-body]') || row.querySelector('[data-edit-time]');
+ if(!node)return;
+ selectEntry(row.dataset.entryId);
+ if(node.hasAttribute('data-edit-body')){
+   node.contentEditable='true';
+   node.tabIndex=0;
+ }else{
+   node.readOnly=false;
+   node.tabIndex=0;
+ }
+ node.focus();
+ if(node.hasAttribute('data-edit-time'))node.select();
+}
+transcript.addEventListener('dblclick',e=>{
+ if(e.target.closest('[data-pick-media],.delete-entry,video,a'))return;
+ const row=e.target.closest('[data-entry-id]');
+ if(row)enableInline(e.target,row);
+});
 transcript.addEventListener('click',e=>{
+ const empty=e.target.closest('#emptyImportButton');
+ if(empty){E('fileInput')?.click();return;}
  const del=e.target.closest('[data-delete-id]');
- if(del){mutate(d=>{d.items=d.items.filter(i=>i.id!==del.dataset.deleteId);});return;}
- const media=e.target.closest('[data-pick-media]');if(media)pick(media.dataset.pickMedia,null);
+ if(del){
+  const id=del.dataset.deleteId;
+  selectedEntryId=null;
+  mutate(d=>{d.items=d.items.filter(i=>i.id!==id);});return;
+ }
+ const media=e.target.closest('[data-pick-media]');
+ if(media){pick(media.dataset.pickMedia,null);return;}
+ const row=e.target.closest('[data-entry-id]');
+ if(row)selectEntry(row.dataset.entryId);
+ else selectEntry(null);
 });
 document.addEventListener('keydown',e=>{
  if(e.defaultPrevented||e.isComposing||!(e.ctrlKey||e.metaKey))return;
@@ -303,44 +373,82 @@ document.addEventListener('keydown',e=>{
  if(e.key.toLowerCase()==='y'){e.preventDefault();redo();}
  if(e.key.toLowerCase()==='s'){e.preventDefault();exportJson();}
 });
-let guide;
+// Native-like gestures: single tap selects, double tap edits, and
+// dragging the bubble itself moves it. Touch drag starts after a brief hold
+// so ordinary vertical scrolling retains its normal mobile behavior.
+let guide, pendingPointer=null, holdTimer=null;
+function selectFromPointer(e,row){
+ const now=Date.now(),id=row.dataset.entryId;
+ const twice=lastTap.id===id && now-lastTap.at<360;
+ lastTap={id,at:now};
+ if(twice)enableInline(e.target,row);else selectEntry(id);
+}
 function clearDrag(){
+ clearTimeout(holdTimer);holdTimer=null;
  if(drag?.row){drag.row.style.transform='';drag.row.classList.remove('is-moving');}
- if(guide)guide.remove();guide=null;drag=null;
+ if(guide)guide.remove();guide=null;drag=null;pendingPointer=null;
  document.body.classList.remove('editor-dragging');
 }
-transcript.addEventListener('pointerdown',e=>{
- const handle=e.target.closest('[data-drag-handle]'),row=handle?.closest('[data-entry-id]');
- if(!row||e.button>0)return;
- e.preventDefault();
- drag={id:row.dataset.entryId,row,x:e.clientX,y:e.clientY,zone:row.dataset.side,moved:false};
- try{handle.setPointerCapture?.(e.pointerId);}catch{/* Synthetic or unsupported pointers still reorder via bubble events. */}
+function beginDrag(info){
+ if(!info || drag)return;
+ const row=info.row;
+ drag={id:row.dataset.entryId,row,x:info.x,y:info.y,zone:row.dataset.side,moved:false};
+ try{row.setPointerCapture?.(info.pointerId);}catch{}
  row.classList.add('is-moving');document.body.classList.add('editor-dragging');
  guide=document.createElement('div');guide.className='editor-drop-guide';
  guide.innerHTML='<span>相手</span><span>システム</span><span>自分</span>';
  document.body.appendChild(guide);
  const r=transcript.getBoundingClientRect();
  Object.assign(guide.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+}
+transcript.addEventListener('pointerdown',e=>{
+ const row=e.target.closest('[data-entry-id]');
+ if(!row||e.button>0||e.target.closest('button,a,video,[contenteditable="true"],input:not([readonly])'))return;
+ const info={row,x:e.clientX,y:e.clientY,pointerId:e.pointerId,
+   type:e.pointerType,target:e.target,at:Date.now()};
+ pendingPointer=info;
+ if(e.pointerType==='touch'){
+   holdTimer=setTimeout(()=>{if(pendingPointer===info)beginDrag(info);},320);
+ }
+ // For mouse, start only AFTER moving 6px: keeping pointer capture off
+ // normal taps is essential to target the time field on double-click.
 });
 transcript.addEventListener('pointermove',e=>{
+ if(pendingPointer && !drag){
+   const delta=Math.hypot(e.clientX-pendingPointer.x,e.clientY-pendingPointer.y);
+   if(pendingPointer.type==='touch'){
+     if(delta>9){clearTimeout(holdTimer);holdTimer=null;pendingPointer=null;}
+     return;
+   }
+   if(delta>6)beginDrag(pendingPointer);
+   else return;
+ }
  if(!drag)return;
+ if(e.cancelable)e.preventDefault();
  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
- drag.row.style.transform=`translate(${dx}px,${dy}px)`;
  if(Math.hypot(dx,dy)>6)drag.moved=true;
- const r=transcript.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
- drag.zone=x<.36?'you':x>.64?'me':'system';
+ drag.row.style.transform=`translate(${dx}px,${dy}px)`;
+ const r=transcript.getBoundingClientRect(),fraction=(e.clientX-r.left)/r.width;
+ drag.zone=fraction<.36?'you':fraction>.64?'me':'system';
  [...guide.children].forEach((el,i)=>el.classList.toggle('active',['you','system','me'][i]===drag.zone));
  if(e.clientY<r.top+28)transcript.scrollTop-=15;
  if(e.clientY>r.bottom-28)transcript.scrollTop+=15;
 });
 transcript.addEventListener('pointerup',e=>{
+ if(pendingPointer && !drag){
+   const row=pendingPointer.row;
+   clearDrag();
+   if(e.pointerType==='touch')selectFromPointer(e,row);
+   return;
+ }
  if(!drag)return;
  const moved=drag.moved,id=drag.id,zone=drag.zone,row=drag.row;
  const others=[...transcript.querySelectorAll('[data-entry-id]')].filter(el=>el!==row);
  let pos=others.findIndex(el=>e.clientY<el.getBoundingClientRect().top+el.getBoundingClientRect().height/2);
  if(pos<0)pos=others.length;
  clearDrag();
- if(!moved)return;
+ if(!moved){selectEntry(id);return;}
+ selectedEntryId=null;
  mutate(d=>{
   const old=d.items.findIndex(x=>x.id===id);if(old<0)return;
   const [it]=d.items.splice(old,1);
@@ -351,8 +459,7 @@ transcript.addEventListener('pointerup',e=>{
    if(it.type==='system')it.type=['text','attachment','call'].includes(it.previousType)?it.previousType:'text';
    const oldSide=it.side;
    it.side=zone;
-   // Reordering a group peer's message within the left column must
-   // NOT silently change C to the first peer B.
+   // Keep each original group participant when moving only within the peer side.
    if(zone==='me')it.speaker=d.self;
    else if(oldSide!=='you'||!it.speaker||it.speaker===d.self)
      it.speaker=d.participants.find(p=>p.name!==d.self)?.name||'相手';

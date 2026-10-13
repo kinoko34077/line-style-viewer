@@ -1,0 +1,61 @@
+name: Publish LINE chat editor to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: line-style-viewer-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout accepted main
+        uses: actions/checkout@v4
+      - name: Stage only static public application assets
+        run: |
+          mkdir -p _site
+          cp index.html script.js editor.js txt-export.js style.css editor.css _site/
+          cp -R default _site/
+          touch _site/.nojekyll
+          test -f _site/index.html
+          test -f _site/txt-export.js
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload static application
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Publish accepted main
+        id: deploy
+        uses: actions/deploy-pages@v4
+      - name: Confirm live Pages HTML and TXT export asset
+        env:
+          SITE_URL: ${{ steps.deploy.outputs.page_url }}
+        run: |
+          site="${SITE_URL%/}"
+          test -n "$site"
+          for attempt in $(seq 1 18); do
+            if curl --fail --silent --show-error --location --max-time 20 "$site/" -o /tmp/line-index.html &&
+               grep -q 'txt-export.js' /tmp/line-index.html &&
+               curl --fail --silent --show-error --location --max-time 20 "$site/txt-export.js" -o /tmp/line-txt-export.js &&
+               grep -q 'createLineTxt' /tmp/line-txt-export.js; then
+              echo "LIVE_PAGES_VERIFIED=$site/"
+              exit 0
+            fi
+            echo "Waiting for new Pages public version: $attempt"
+            sleep 10
+          done
+          echo "::error::Published version not readable from public URL"
+          exit 1

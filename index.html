@@ -17,10 +17,14 @@
       <div class="header-icons editor-actions">
         <button class="chrome-icon" id="undoButton" type="button" aria-label="元に戻す" title="元に戻す" disabled><svg viewBox="0 0 24 24"><path d="M9 6 3 12l6 6M3 12h11a7 7 0 0 1 0 14" transform="translate(0,-5)"/></svg></button>
         <button class="chrome-icon" id="redoButton" type="button" aria-label="やり直す" title="やり直す" disabled><svg viewBox="0 0 24 24"><path d="m15 6 6 6-6 6M21 12H10a7 7 0 0 0-7 7"/></svg></button>
-        <button class="chrome-icon" id="saveButton" type="button" aria-label="プロジェクトを保存" title="プロジェクトを保存"><svg viewBox="0 0 24 24"><path d="M4 3h13l4 4v14H3V3zM7 3v7h9V3M7 21v-8h10v8"/></svg></button>
+        <button class="chrome-icon" id="saveButton" type="button" aria-label="プロジェクトを保存" title="TXT / JSONで保存"><svg viewBox="0 0 24 24"><path d="M4 3h13l4 4v14H3V3zM7 3v7h9V3M7 21v-8h10v8"/></svg></button>
       </div>
       <button class="chrome-icon menu-toggle" id="menuToggle" type="button" aria-label="設定を開く" aria-controls="settingsBackdrop" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18"/></svg></button>
     </header>
+    <div id="saveFormatMenu" class="save-format-menu" hidden role="group" aria-label="保存形式">
+      <button type="button" id="saveTxtButton">LINE形式のTXTで保存</button>
+      <button type="button" id="saveJsonButton">編集プロジェクトをJSONで保存</button>
+    </div>
     <main id="chatContainer" role="log" aria-label="トーク履歴"></main>
     <footer class="conversation-footer" aria-label="トーク作成">
       <button type="button" class="chrome-icon footer-plus" id="addMenuToggle" aria-label="メッセージ追加メニュー"><svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/></svg></button>
@@ -70,7 +74,8 @@
           <label class="self-picker settings-field" for="selfSelector"><span>自分：</span><select id="selfSelector" disabled><option value="">未読み込み</option></select></label>
           <label class="chat-mode-picker settings-field" for="chatModeSelector"><span>会話形式：</span><select id="chatModeSelector" aria-label="会話形式"><option value="auto">自動</option><option value="direct">個チャ</option><option value="group">グループ</option></select></label>
           <button type="button" id="newProjectButton" class="menu-action">新しいトークを作成</button>
-          <button type="button" id="exportProjectButton" class="menu-action">JSONとして保存</button>
+          <button type="button" id="exportTxtButton" class="menu-action">LINE形式のTXTで保存</button>
+          <button type="button" id="exportProjectButton" class="menu-action">JSONとして保存（画像・編集状態も保持）</button>
           <p class="settings-note">編集内容はこのブラウザ内へ自動保存されます。原本のTXTは変更しません。別端末へ移すにはJSON保存を使用してください。</p>
         </div>
       </div>
@@ -78,6 +83,7 @@
     </div>
   <input id="inlineMediaInput" type="file" hidden>
   <script src="script.js"></script>
+  <script src="txt-export.js"></script>
   <script src="editor.js"></script>
 </body>
 </html>

@@ -312,3 +312,88 @@ html[data-theme="black"] .menu-action { background: #394047; color: #f7f8fa; }
   .viewer-header.conversation-header { gap: 3px; }
   .send-button { padding: 8px 5px; font-size: 11px; }
 }
+
+/* User-first interaction contract: native LINE balloon before editor chrome.
+   Tap a message to select it (only then show its delete affordance),
+   double-tap to edit, drag the balloon itself to rearrange. */
+.drag-grip { display: none !important; }
+.editable-entry { touch-action: pan-y; }
+.editable-entry:not(.is-moving) .inline-body[contenteditable="false"],
+.editable-entry:not(.is-moving) .inline-time[readonly] {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.editable-entry .balloon, .editable-entry .edit-system { position: relative; }
+.editable-entry .delete-entry {
+  display: none;
+  position: absolute;
+  top: -13px;
+  right: -11px;
+  transform: none;
+  z-index: 7;
+  width: 25px;
+  height: 25px;
+  background: #f8f9fc;
+  border: 1px solid #d6dbe2;
+  border-radius: 50%;
+  color: #526071;
+  opacity: 1;
+  font-size: 17px;
+  line-height: 22px;
+  text-align: center;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.editable-entry.is-selected .delete-entry,
+.editable-entry .delete-entry:focus-visible { display: grid; place-items: center; }
+.editable-entry.is-moving .delete-entry { display: none; }
+.editable-entry.is-moving { touch-action: none; }
+.inline-body[contenteditable="true"], .inline-time:not([readonly]) {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: auto;
+}
+.editor-empty #emptyImportButton {
+  display: block;
+  margin: 14px auto 0;
+  border-radius: 999px;
+  padding: 11px 16px;
+  min-height: 38px;
+  background: #06c755;
+  border: 0;
+  color: white;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.save-format-menu {
+  position: absolute;
+  right: 48px;
+  top: 52px;
+  z-index: 40;
+  min-width: 230px;
+  max-width: calc(100vw - 20px);
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--shell-footer);
+  color: var(--shell-ink);
+  border: 1px solid var(--compose-border);
+  box-shadow: 0 4px 16px #0003;
+}
+.save-format-menu[hidden] { display: none; }
+.save-format-menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 12px 10px;
+  border-radius: 7px;
+  font: inherit;
+  cursor: pointer;
+}
+.save-format-menu button:hover,
+.save-format-menu button:focus-visible { background: var(--compose-background); }
