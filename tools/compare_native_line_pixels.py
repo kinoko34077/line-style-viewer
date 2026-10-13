@@ -139,7 +139,13 @@ def run():
                     return [int(v) for v in np.median(subset,axis=0)]
                 data["reference_fill_median_rgb"]=fill_color(original,native[1],refcol)
                 data["viewer_fill_median_rgb"]=fill_color(viewer,output[1],appcol)
-                data.update({"source":key,"url":url,"message_side":side,"native_size":[w,h]})
+                data.update({
+                    "source":key,"url":url,"message_side":side,
+                    "native_size":[w,h],
+                    "comparison_kind":"identical_text" if key=="smartphone_hunter_2021" else "different_text_geometry_only",
+                    "reference_css_equivalent_width":round((native[1][2]-native[1][0]) / ((frame[1]-frame[0])*w/440),2) if key=="smartphone_hunter_2021" else None,
+                    "reference_css_equivalent_height":round((native[1][3]-native[1][1]) / ((frame[1]-frame[0])*w/440),2) if key=="smartphone_hunter_2021" else None
+                })
                 reports.append(data)
                 print("MEASURED",json.dumps(data,ensure_ascii=False),flush=True)
         except Exception as exc:
@@ -151,8 +157,11 @@ def run():
        "scope":"same-text bubble masks rescaled to 256x256; never full-screen pixel equality"},
        indent=2,ensure_ascii=False),encoding="utf-8")
     if not reports:raise RuntimeError("No original LINE image could be downloaded and segmented")
-    print("MEAN_NORMALIZED_SILHOUETTE_IOU",
-       round(sum(row["silhouette_iou_normalized"] for row in reports)/len(reports),5))
+    matching=[row for row in reports if row["comparison_kind"]=="identical_text"]
+    if not matching:
+        raise RuntimeError("Downloaded screenshots but no identical-text bubble comparison completed")
+    print("SAME_TEXT_NORMALIZED_SILHOUETTE_IOU_MEAN",
+       round(sum(row["silhouette_iou_normalized"] for row in matching)/len(matching),5))
 
 def selftest():
     im=Image.new("RGB",(350,230),"#8da9cd")
