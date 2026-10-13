@@ -214,6 +214,7 @@ on('titleInput','change',e=>mutate(d=>{d.title=e.target.value||'トーク';}));
 on('scaleControl','change',e=>mutate(d=>{d.scale=Number(e.target.value);},{noRender:true}));
 on('themeSelector','change',e=>mutate(d=>{d.theme=e.target.value;},{noRender:true}));
 on('chatModeSelector','change',e=>mutate(d=>{d.mode=e.target.value;}));
+on('selfSelector','change',e=>{const s=E('composeSpeaker');if(s){s.dataset.preferred=e.target.value;s.value=e.target.value;}});
 on('composeSpeaker','change',e=>{e.target.dataset.preferred=e.target.value;});
 on('sendButton','click',send);
 on('composeInput','keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();}});
