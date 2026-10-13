@@ -179,3 +179,71 @@ test('an entirely repeated older backup is skipped, not rendered twice', () => {
     ['one', 'two', 'three']
   );
 });
+
+
+test('unterminated leading quote does not absorb later exported messages or dates', () => {
+  const parser = loadParser();
+  const input = [
+    '2017/04/24(月)',
+    '08:00\tA\t"not closed',
+    '08:01\tB\tmust survive',
+    '2017/04/25(火)',
+    '09:00\tA\tlater day'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  const messages = parsed.items.filter((item) => item.type !== 'date');
+  assert.deepEqual(
+    Array.from(messages, (item) => item.content),
+    ['"not closed', 'must survive', 'later day']
+  );
+  assert.deepEqual(
+    Array.from(parsed.items.filter((item) => item.type === 'date'), (item) => item.content),
+    ['2017/04/24(月)', '2017/04/25(火)']
+  );
+});
+
+test('normal authored messages mentioning calls remain ordinary chat records', () => {
+  const parser = loadParser();
+  const input = [
+    '12:00\tA\t今夜通話したい',
+    '12:01\tB\t通話の音質が悪い',
+    '12:02\tA\t音声通話時間 00:12'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  assert.deepEqual(
+    Array.from(parsed.items, (item) => item.type),
+    ['text', 'text', 'system']
+  );
+  assert.equal(parsed.items[0].name, 'A');
+  assert.equal(parsed.items[1].name, 'B');
+});
+
+test('different-time call notices are not collapsed by snapshot overlap', () => {
+  const parser = loadParser();
+  const input = [
+    '[LINE] Bとのトーク履歴',
+    '2017/04/24(月)',
+    '12:00\t\t通話時間 00:15',
+    '[LINE] Bとのトーク履歴',
+    '2017/04/24(月)',
+    '13:00\t\t通話時間 00:15'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  const systems = parsed.items.filter((item) => item.type === 'system');
+  assert.equal(systems.length, 2);
+  assert.deepEqual(Array.from(systems, (item) => item.time), ['12:00', '13:00']);
+});
+
+test('an exact repeated call notice still deduplicates', () => {
+  const parser = loadParser();
+  const input = [
+    '[LINE] Bとのトーク履歴',
+    '2017/04/24(月)',
+    '12:00\t\t通話時間 00:15',
+    '[LINE] Bとのトーク履歴',
+    '2017/04/24(月)',
+    '12:00\t\t通話時間 00:15'
+  ].join('\n');
+  const parsed = parser.parseText(parser.parseMultiline(input));
+  assert.equal(parsed.items.filter((item) => item.type === 'system').length, 1);
+});
