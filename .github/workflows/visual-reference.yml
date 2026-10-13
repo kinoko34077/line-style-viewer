@@ -38,6 +38,8 @@ jobs:
           path: |
             visual-reference-result/metrics.json
             visual-reference-result/*_overlay.png
+            visual-reference-result/*_reference_mask.png
+            visual-reference-result/*_viewer_mask.png
             visual-reference-result/viewer.png
           retention-days: 7
           if-no-files-found: warn
