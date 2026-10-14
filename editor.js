@@ -325,7 +325,7 @@ on('participantList','change',e=>{
  if(!name||doc.participants.some((p,j)=>j!==i&&p.name===name)){status('名前が重複・空欄です',true);render();return;}
  mutate(d=>{const old=d.participants[i].name;d.participants[i].name=name;
   if(d.self===old)d.self=name;
-  d.items.forEach(it=>{if(it.speaker===old)it.speaker=name;});
+  d.items.forEach(it=>{if(it.speaker===old)it.speaker=name;if(it.previousSpeaker===old)it.previousSpeaker=name;});
  });
 });
 on('participantList','click',e=>{
