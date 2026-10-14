@@ -15,7 +15,7 @@
 ## 編集データ
 
 \`editor.js\`が持つ独立した版付き文書 \`{version:1,title,self,mode,scale,theme,participants,items}\`。
-各項目 \`{id,type,side,speaker,time,content,media,previousType,callKind}\` のうち \`type\` は text / attachment / date / system / call、\`side\` は me / you / system。参加者は名前とローカル画像データを持つ。\`media\` は \`{data,mime,name}\`。IDで対応付け、表示順は items の順序を正本とする。相手側で話者が複数いる場合、話者の表示名・アイコンは参加者設定に従い、既存LINEグループ表示を維持。
+各項目 \`{id,type,side,speaker,time,content,media,previousType,previousSpeaker,callKind}\` のうち \`type\` は text / attachment / date / system / call、\`side\` は me / you / system。参加者は名前とローカル画像データを持つ。\`media\` は \`{data,mime,name}\`。IDで対応付け、表示順は items の順序を正本とする。 話者名とsideは一体の意味状態として整合させる（送信側meはself、受信側youはself以外、system/dateは話者なし）。話者を改名する場合はメッセージ内のspeakerとpreviousSpeakerも変更し、追加話者の削除は参照中メッセージの再割当て確認を経て行う。相手→自分／システム→相手へ戻した際には、previousSpeakerに記録した元の相手を優先して復元する。相手側で話者が複数いる場合、話者の表示名・アイコンは参加者設定に従い、既存LINEグループ表示を維持。
 
 TXTインポートでは既存 \`parseMultiline\` → \`parseText\` を使用し、文書へ**コピー**する。元LINE記録にない写真・動画・ファイルの内容は未指定のまま示し、割り当て時だけローカルのFileReaderで紐付ける。画像／動画としてプレビューする形式はPNG/JPEG/GIF/WebP、MP4/WebM。PDF、TXT、ZIP、MP3/OGG/WAVは既知形式のファイルとして、その他の拡張子やMIME種別も`application/octet-stream`の汎用ダウンロードへ変換して扱う（実行可能なHTMLとしてプレビューしない）。入力ファイル1件15MB以下。プロフィールアイコンの選択は安全なラスター画像に限定する。インポートした画像の埋込データやローカルJSON書出しにはユーザーが選んだ実データが入る。公開リポジトリ、LINEサーバ、ChatGPTのメッセージには自動送信しない。
 
