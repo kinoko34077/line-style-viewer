@@ -99,3 +99,13 @@ test('duplicate participant names in saved JSON collapse to one identity',()=>{
  v.replace(d);
  assert.deepEqual(Array.from(v.project().participants,p=>p.name),['Alice','Bob','Guest']);
 });
+
+test('renaming a participant updates remembered peer as well as visible speaker',()=>{
+ const v=creator(),d=base();
+ d.items[1].previousSpeaker='Bob';v.replace(d);
+ const input={value:'ボブ',dataset:{personIndex:'1'},matches(sel){return sel==='[data-person-index]';}};
+ v.handlers.get('participantList:change')({target:input});
+ assert.equal(v.project().items[1].speaker,'ボブ');
+ assert.equal(v.project().items[1].previousSpeaker,'ボブ');
+ assert.match(v.controls.participantList.innerHTML,/ボブ/);
+});
