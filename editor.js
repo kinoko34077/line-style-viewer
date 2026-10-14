@@ -25,6 +25,8 @@ function sanitize(input){
  d.scale=Math.min(160,Math.max(80,Number(input.scale)||120));
  d.participants=input.participants.slice(0,150).map(p=>{if(!p||typeof p!=='object')throw Error('話者の形式が不正です');return {name:String(p.name||'').slice(0,100),
    avatar:typeof p.avatar==='string'&&allowedMedia.test(p.avatar)&&p.avatar.startsWith('data:image/')?p.avatar:''};}).filter(p=>p.name);
+ const knownNames=new Set();
+ d.participants=d.participants.filter(p=>{if(knownNames.has(p.name))return false;knownNames.add(p.name);return true;});
  if(!d.participants.some(p=>p.name===d.self))d.participants.unshift({name:d.self,avatar:''});
  const seenIds=new Set();
  d.items=input.items.map(it=>{
@@ -37,9 +39,37 @@ function sanitize(input){
    return {id,
     type,side:['me','you','system'].includes(it.side)?it.side:'you',
     speaker:String(it.speaker??it.name??'').slice(0,100),time:String(it.time||'').slice(0,50),
-    content:String(it.content||'').slice(0,200000),media,callKind:String(it.callKind||''),previousType:String(it.previousType||'text')};
+    content:String(it.content||'').slice(0,200000),media,callKind:String(it.callKind||''),previousType:String(it.previousType||'text'),previousSpeaker:String(it.previousSpeaker||'').slice(0,100)};
  });
+ normalizeSpeakers(d);
  return d;
+}
+function peerOf(d,preferred=''){
+ const candidates=d.participants.filter(p=>p.name!==d.self);
+ if(preferred&&candidates.some(p=>p.name===preferred))return preferred;
+ return (candidates.find(p=>p.name!=='自分')||candidates[0])?.name||'';
+}
+function ensurePeer(d,preferred=''){
+ const candidate=peerOf(d,preferred);if(candidate)return candidate;
+ let name='相手',n=2;
+ while(d.participants.some(p=>p.name===name))name='相手'+n++;
+ d.participants.push({name,avatar:''});return name;
+}
+function normalizeSpeakers(d){
+ for(const it of d.items){
+  if(it.side==='system'||it.type==='system'||it.type==='date'){
+   if(it.speaker&&it.speaker!==d.self&&!it.previousSpeaker)it.previousSpeaker=it.speaker;
+   it.side='system';it.speaker='';continue;
+  }
+  if(it.side==='me'){
+   if(it.speaker&&it.speaker!==d.self)it.previousSpeaker=it.speaker;
+   it.speaker=d.self;continue;
+  }
+  if(it.speaker===d.self)it.speaker=ensurePeer(d,it.previousSpeaker);
+  if(!it.speaker&&it.previousSpeaker)it.speaker=peerOf(d,it.previousSpeaker)||'';
+  if(it.speaker&&!d.participants.some(p=>p.name===it.speaker)&&d.participants.length<150)
+   d.participants.push({name:it.speaker,avatar:''});
+ }
 }
 function status(s,error=false){
  const e=E('sourceStatus');
@@ -54,6 +84,7 @@ function mutate(fn,option={}){
  touched=true;
  const before=snapshot();
  fn(doc);
+ normalizeSpeakers(doc);
  if(snapshot()===before)return false;
  history.push(before);trimStack(history);future=[];
  schedule();if(!option.noRender)render(option);
@@ -113,7 +144,7 @@ async function restore(){
  loaded=true;render();
 }
 const itemById=id=>doc.items.find(i=>i.id===id);
-const peer=()=>doc.participants.find(p=>p.name!==doc.self)?.name||'相手';
+const peer=()=>peerOf(doc)||'相手';
 const group=()=>doc.mode==='group'||doc.mode==='auto'&&new Set(doc.items.filter(i=>i.side!=='system').map(i=>i.speaker).filter(Boolean)).size>=3;
 const avatar=speaker=>doc.participants.find(p=>p.name===speaker)?.avatar||'./default/default-icon.png';
 function mediaKind(it){
@@ -187,7 +218,7 @@ function render(options={}){
  transcript.scrollTop=options.bottom||atEnd?transcript.scrollHeight:oldScroll;
 }
 function addItem(type,side,content,media){
- const it={id:identifier(),type,side,content,time:type==='date'?'':clock(),speaker:side==='me'?doc.self:side==='you'?peer():'',media:media||null,previousType:'text',callKind:''};
+ const it={id:identifier(),type,side,content,time:type==='date'?'':clock(),speaker:side==='me'?doc.self:side==='you'?peer():'',media:media||null,previousType:'text',previousSpeaker:'',callKind:''};
  mutate(d=>d.items.push(it),{bottom:true});
  return it;
 }
@@ -199,7 +230,7 @@ function changeItem(id,field,value){
 function send(){
  const input=E('composeInput');if(!input||!input.value.trim())return;
  const speaker=E('composeSpeaker')?.value||doc.self;
- const it={id:identifier(),type:'text',side:speaker===doc.self?'me':'you',speaker,time:clock(),content:input.value.replace(/\r\n/g,'\n'),media:null,previousType:'text',callKind:''};
+ const it={id:identifier(),type:'text',side:speaker===doc.self?'me':'you',speaker,time:clock(),content:input.value.replace(/\r\n/g,'\n'),media:null,previousType:'text',previousSpeaker:'',callKind:''};
  mutate(d=>d.items.push(it),{bottom:true});input.value='';input.focus();
 }
 function focusBody(id){
