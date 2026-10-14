@@ -25,6 +25,8 @@ function sanitize(input){
  d.scale=Math.min(160,Math.max(80,Number(input.scale)||120));
  d.participants=input.participants.slice(0,150).map(p=>{if(!p||typeof p!=='object')throw Error('話者の形式が不正です');return {name:String(p.name||'').slice(0,100),
    avatar:typeof p.avatar==='string'&&allowedMedia.test(p.avatar)&&p.avatar.startsWith('data:image/')?p.avatar:''};}).filter(p=>p.name);
+ const knownNames=new Set();
+ d.participants=d.participants.filter(p=>{if(knownNames.has(p.name))return false;knownNames.add(p.name);return true;});
  if(!d.participants.some(p=>p.name===d.self))d.participants.unshift({name:d.self,avatar:''});
  const seenIds=new Set();
  d.items=input.items.map(it=>{
@@ -37,9 +39,37 @@ function sanitize(input){
    return {id,
     type,side:['me','you','system'].includes(it.side)?it.side:'you',
     speaker:String(it.speaker??it.name??'').slice(0,100),time:String(it.time||'').slice(0,50),
-    content:String(it.content||'').slice(0,200000),media,callKind:String(it.callKind||''),previousType:String(it.previousType||'text')};
+    content:String(it.content||'').slice(0,200000),media,callKind:String(it.callKind||''),previousType:String(it.previousType||'text'),previousSpeaker:String(it.previousSpeaker||'').slice(0,100)};
  });
+ normalizeSpeakers(d);
  return d;
+}
+function peerOf(d,preferred=''){
+ const candidates=d.participants.filter(p=>p.name!==d.self);
+ if(preferred&&candidates.some(p=>p.name===preferred))return preferred;
+ return (candidates.find(p=>p.name!=='自分')||candidates[0])?.name||'';
+}
+function ensurePeer(d,preferred=''){
+ const candidate=peerOf(d,preferred);if(candidate)return candidate;
+ let name='相手',n=2;
+ while(d.participants.some(p=>p.name===name))name='相手'+n++;
+ d.participants.push({name,avatar:''});return name;
+}
+function normalizeSpeakers(d){
+ for(const it of d.items){
+  if(it.side==='system'||it.type==='system'||it.type==='date'){
+   if(it.speaker&&it.speaker!==d.self&&!it.previousSpeaker)it.previousSpeaker=it.speaker;
+   it.side='system';it.speaker='';continue;
+  }
+  if(it.side==='me'){
+   if(it.speaker&&it.speaker!==d.self)it.previousSpeaker=it.speaker;
+   it.speaker=d.self;continue;
+  }
+  if(it.speaker===d.self)it.speaker=ensurePeer(d,it.previousSpeaker);
+  if(!it.speaker&&it.previousSpeaker)it.speaker=peerOf(d,it.previousSpeaker)||'';
+  if(it.speaker&&!d.participants.some(p=>p.name===it.speaker)&&d.participants.length<150)
+   d.participants.push({name:it.speaker,avatar:''});
+ }
 }
 function status(s,error=false){
  const e=E('sourceStatus');
@@ -54,6 +84,7 @@ function mutate(fn,option={}){
  touched=true;
  const before=snapshot();
  fn(doc);
+ normalizeSpeakers(doc);
  if(snapshot()===before)return false;
  history.push(before);trimStack(history);future=[];
  schedule();if(!option.noRender)render(option);
@@ -113,7 +144,7 @@ async function restore(){
  loaded=true;render();
 }
 const itemById=id=>doc.items.find(i=>i.id===id);
-const peer=()=>doc.participants.find(p=>p.name!==doc.self)?.name||'相手';
+const peer=()=>peerOf(doc)||'相手';
 const group=()=>doc.mode==='group'||doc.mode==='auto'&&new Set(doc.items.filter(i=>i.side!=='system').map(i=>i.speaker).filter(Boolean)).size>=3;
 const avatar=speaker=>doc.participants.find(p=>p.name===speaker)?.avatar||'./default/default-icon.png';
 function mediaKind(it){
@@ -135,7 +166,7 @@ function mediaKind(it){
 const missingAsset=kind=>kind==='stamp'?'./default/default-stamp.png':'./default/default-photo.png';
 function fields(){
  const p=E('participantList'),s=E('composeSpeaker'),gallery=E('unassignedGallery');
- if(p)p.innerHTML=doc.participants.map((x,i)=>`<div class="participant-row"><button type="button" data-avatar-index="${i}" class="avatar-picker" aria-label="アイコンを変更"><img src="${esc(x.avatar||'./default/default-icon.png')}" alt=""></button><input data-person-index="${i}" class="participant-name" aria-label="話者の名前" value="${esc(x.name)}">${x.name===doc.self?'<small>自分</small>':''}</div>`).join('');
+ if(p)p.innerHTML=doc.participants.map((x,i)=>`<div class="participant-row"><button type="button" data-avatar-index="${i}" class="avatar-picker" aria-label="${esc(x.name)}のアイコンを変更"><img src="${esc(x.avatar||'./default/default-icon.png')}" alt=""></button><input data-person-index="${i}" class="participant-name" aria-label="話者の名前" value="${esc(x.name)}">${x.name===doc.self?'<small>送信側</small>':`<button type="button" class="remove-participant" data-delete-person-index="${i}" aria-label="話者 ${esc(x.name)} を削除" title="話者を削除">×</button>`}</div>`).join('');
  if(s){const old=s.value||s.dataset.preferred||doc.self;s.innerHTML=doc.participants.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');s.value=doc.participants.some(p=>p.name===old)?old:doc.self;}
  if(gallery && gallery.closest('.menu-expand')?.classList.contains('expanded')){const missing=doc.items.filter(x=>mediaKind(x)&&!x.media?.data);
   gallery.innerHTML=missing.length?missing.map(x=>`<button type="button" class="gallery-tile" data-pick-media="${esc(x.id)}" aria-label="${esc(x.content)}の素材を選択"><img src="${missingAsset(mediaKind(x))}" alt=""><span>${esc(x.content)}</span></button>`).join(''):'<p>未指定の写真・動画・ファイルはありません。</p>';
@@ -187,7 +218,7 @@ function render(options={}){
  transcript.scrollTop=options.bottom||atEnd?transcript.scrollHeight:oldScroll;
 }
 function addItem(type,side,content,media){
- const it={id:identifier(),type,side,content,time:type==='date'?'':clock(),speaker:side==='me'?doc.self:side==='you'?peer():'',media:media||null,previousType:'text',callKind:''};
+ const it={id:identifier(),type,side,content,time:type==='date'?'':clock(),speaker:side==='me'?doc.self:side==='you'?peer():'',media:media||null,previousType:'text',previousSpeaker:'',callKind:''};
  mutate(d=>d.items.push(it),{bottom:true});
  return it;
 }
@@ -199,7 +230,7 @@ function changeItem(id,field,value){
 function send(){
  const input=E('composeInput');if(!input||!input.value.trim())return;
  const speaker=E('composeSpeaker')?.value||doc.self;
- const it={id:identifier(),type:'text',side:speaker===doc.self?'me':'you',speaker,time:clock(),content:input.value.replace(/\r\n/g,'\n'),media:null,previousType:'text',callKind:''};
+ const it={id:identifier(),type:'text',side:speaker===doc.self?'me':'you',speaker,time:clock(),content:input.value.replace(/\r\n/g,'\n'),media:null,previousType:'text',previousSpeaker:'',callKind:''};
  mutate(d=>d.items.push(it),{bottom:true});input.value='';input.focus();
 }
 function focusBody(id){
@@ -243,10 +274,14 @@ function importParsed(parsed,selfChoice,mode){
  status('TXT履歴を編集用に読み込みました。原本は変更しません');
 }
 function setIdentityAndMode(self,mode){
- mutate(d=>{d.self=self||d.self;d.mode=mode||d.mode;
-  if(!d.participants.some(p=>p.name===d.self))d.participants.push({name:d.self,avatar:''});
+ const oldSelf=doc.self,composer=E('composeSpeaker');
+ const composerWasSelf=!!composer&&composer.value===oldSelf;
+ mutate(d=>{
+  d.self=self&&d.participants.some(p=>p.name===self)?self:d.self;
+  d.mode=mode||d.mode;
   d.items.forEach(i=>{if(i.side!=='system')i.side=i.speaker===d.self?'me':'you';});
  });
+ if(composerWasSelf&&composer){composer.dataset.preferred=doc.self;composer.value=doc.self;}
 }
 window.talkEditor={loadParsed:importParsed,setIdentityAndMode,getProject:()=>JSON.parse(snapshot()),
  addItem,undo,redo,exportProject:exportJson,exportTxt,importProject:importJson,replaceProject:p=>mutate(()=>{doc=sanitize(p);}),render};
@@ -290,10 +325,30 @@ on('participantList','change',e=>{
  if(!name||doc.participants.some((p,j)=>j!==i&&p.name===name)){status('名前が重複・空欄です',true);render();return;}
  mutate(d=>{const old=d.participants[i].name;d.participants[i].name=name;
   if(d.self===old)d.self=name;
-  d.items.forEach(it=>{if(it.speaker===old)it.speaker=name;});
+  d.items.forEach(it=>{if(it.speaker===old)it.speaker=name;if(it.previousSpeaker===old)it.previousSpeaker=name;});
  });
 });
-on('participantList','click',e=>{const btn=e.target.closest('[data-avatar-index]');if(btn)pick(null,Number(btn.dataset.avatarIndex));});
+on('participantList','click',e=>{
+ const remove=e.target.closest('[data-delete-person-index]');
+ if(remove){
+  const i=Number(remove.dataset.deletePersonIndex),name=doc.participants[i]?.name;
+  if(!name)return;
+  if(name===doc.self){status('送信側の話者は削除できません。先に送信側を変更してください',true);return;}
+  const affected=doc.items.filter(it=>it.side==='you'&&it.speaker===name).length;
+  const replacement=peerOf({participants:doc.participants.filter(p=>p.name!==name),self:doc.self})||'相手';
+  if(affected&&!confirm(`話者「${name}」を削除すると、該当する${affected}件のメッセージを「${replacement}」に変更します。続けますか？`))return;
+  mutate(d=>{
+   d.participants.splice(i,1);
+   const target=affected?ensurePeer(d):peerOf(d);
+   d.items.forEach(it=>{
+    if(it.speaker===name)it.speaker=target||'';
+    if(it.previousSpeaker===name)it.previousSpeaker=target||'';
+   });
+  });
+  status('話者を削除しました');return;
+ }
+ const btn=e.target.closest('[data-avatar-index]');if(btn)pick(null,Number(btn.dataset.avatarIndex));
+});
 on('settingsBackdrop','click',e=>{
  const row=e.target.closest('[data-toggle-section]');
  if(row){
@@ -457,7 +512,7 @@ function beginDrag(info){
  try{row.setPointerCapture?.(info.pointerId);}catch{}
  row.classList.add('is-moving');document.body.classList.add('editor-dragging');
  guide=document.createElement('div');guide.className='editor-drop-guide';
- guide.innerHTML='<span>相手</span><span>システム</span><span>自分</span>';
+ guide.innerHTML=`<span>${esc(group()?'相手側':peer())}</span><span>システム</span><span>${esc(doc.self)}</span>`;
  drag.guides=Array.from(guide.children);
  document.body.appendChild(guide);
  Object.assign(guide.style,{left:bounds.left+'px',top:bounds.top+'px',
@@ -528,16 +583,19 @@ transcript.addEventListener('pointerup',e=>{
   const [it]=d.items.splice(old,1);
   if(zone==='system'){
    if(it.type!=='date'&&it.type!=='system'){it.previousType=it.type;it.type='system';}
-   it.side='system';it.speaker='';
+   if(it.speaker&&it.speaker!==d.self)it.previousSpeaker=it.speaker;
+    it.side='system';it.speaker='';
   }else{
    if(it.type==='system')it.type=['text','attachment','call'].includes(it.previousType)?it.previousType:'text';
    if(it.type==='date')it.type='text';
    const oldSide=it.side;
    it.side=zone;
-   // Keep each original group participant when moving only within the peer side.
-   if(zone==='me')it.speaker=d.self;
-   else if(oldSide!=='you'||!it.speaker||it.speaker===d.self)
-     it.speaker=d.participants.find(p=>p.name!==d.self)?.name||'相手';
+   // Restore original peer after moving through self or system.
+    if(zone==='me'){
+     if(oldSide==='you'&&it.speaker&&it.speaker!==d.self)it.previousSpeaker=it.speaker;
+     it.speaker=d.self;
+    }else if(oldSide!=='you'||!it.speaker||it.speaker===d.self)
+     it.speaker=ensurePeer(d,it.previousSpeaker);
   }
   d.items.splice(Math.max(0,Math.min(pos,d.items.length)),0,it);
  });

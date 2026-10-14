@@ -291,6 +291,26 @@ button.menu-row { cursor: pointer; }
 .participant-row { display: flex; align-items: center; gap: 9px; }
 .participant-row input { flex: 1; min-width: 0; padding: 9px; border-radius: 8px; border: 1px solid #b5bdc7; font-size: 14px; }
 .participant-row small { font-size: 11px; color: #697789; }
+.remove-participant {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #697789;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.remove-participant:hover, .remove-participant:focus-visible {
+  background: #e8eaf0;
+  color: #a93039;
+}
+html[data-theme="black"] .remove-participant { color: #c3c9d2; }
+html[data-theme="black"] .remove-participant:hover,
+html[data-theme="black"] .remove-participant:focus-visible { background: #454b55; }
+
 .avatar-picker { width: 40px; height: 40px; border: 0; background: transparent; cursor: pointer; }
 .avatar-picker img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
 .unassigned-gallery { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }

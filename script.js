@@ -53,7 +53,14 @@ if (themeSelector) themeSelector.addEventListener('change', () => applyTheme(the
 
 function rerenderSelectedChat() {
   if (typeof window !== 'undefined' && window.talkEditor) {
-    window.talkEditor.setIdentityAndMode(selectedSelfName, selectedChatMode);
+    const current = window.talkEditor.getProject();
+    const chosen = selfSelector?.value;
+    // The editor document, not a cached pre-import selection, owns the active identity.
+    const activeSelf = current.participants.some(person => person.name === chosen) ? chosen : current.self;
+    const activeMode = chatModeSelector?.value || selectedChatMode;
+    selectedSelfName = activeSelf;
+    selectedChatMode = activeMode;
+    window.talkEditor.setIdentityAndMode(activeSelf, activeMode);
   } else if (currentChat) {
     renderChat({
       meta: {...currentChat.meta, user: selectedSelfName, chatMode: selectedChatMode},

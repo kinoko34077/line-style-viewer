@@ -125,6 +125,23 @@ def main():
             page.locator('.participant-name').last.fill("登場人物")
             page.locator('.participant-name').last.press("Tab")
             assert project(page)["participants"][-1]["name"]=="登場人物"
+            # User-added speakers are removable without deleting any chat history.
+            page.click("#addParticipantButton")
+            assert project(page)["participants"][-1]["name"]=="話者1"
+            assert page.locator('[data-delete-person-index="2"]').count()==1
+            page.locator('[data-delete-person-index="2"]').click()
+            assert [p["name"] for p in project(page)["participants"]]==["自分","登場人物"]
+            # A configured self name must win over legacy imported selection state.
+            page.locator('.participant-name').first.fill("制作主")
+            page.locator('.participant-name').first.press("Tab")
+            assert project(page)["self"]=="制作主"
+            assert all(i["speaker"]=="制作主" for i in project(page)["items"] if i["side"]=="me")
+            page.evaluate("""() => {
+                const mode=document.getElementById('chatModeSelector');
+                mode.value='group';mode.dispatchEvent(new Event('change',{bubbles:true}));
+                mode.value='direct';mode.dispatchEvent(new Event('change',{bubbles:true}));
+            }""")
+            assert project(page)["self"]=="制作主" and project(page)["mode"]=="direct"
             # Assign another local image to peer avatar.
             page.locator('[data-avatar-index="1"]').click()
             page.set_input_files("#inlineMediaInput",{"name":"avatar.png","mimeType":"image/png","buffer":PNG})
@@ -201,6 +218,12 @@ def main():
                 "after_second_touch":next(i for i in project(page)["items"] if i["id"]==peerId),
                 "entry_markup":page.locator('[data-entry-id="'+peerId+'"]').get_attribute("class")
             }
+            assert next(i for i in project(page)["items"] if i["id"]==peerId)["speaker"]=="制作主"
+            touch_move("you")
+            returned=next(i for i in project(page)["items"] if i["id"]==peerId)
+            assert returned["side"]=="you" and returned["speaker"]=="登場人物",returned
+            touch_move("me")
+            assert next(i for i in project(page)["items"] if i["id"]==peerId)["speaker"]=="制作主"
             page.wait_for_function("document.querySelector('#sourceStatus').textContent.includes('自動保存')",timeout=15000)
             count=len(project(page)["items"])
             page.reload();page.wait_for_function("!!window.talkEditor && window.talkEditor.getProject().title==='制作中のトーク'",timeout=15000)
