@@ -166,7 +166,7 @@ function mediaKind(it){
 const missingAsset=kind=>kind==='stamp'?'./default/default-stamp.png':'./default/default-photo.png';
 function fields(){
  const p=E('participantList'),s=E('composeSpeaker'),gallery=E('unassignedGallery');
- if(p)p.innerHTML=doc.participants.map((x,i)=>`<div class="participant-row"><button type="button" data-avatar-index="${i}" class="avatar-picker" aria-label="アイコンを変更"><img src="${esc(x.avatar||'./default/default-icon.png')}" alt=""></button><input data-person-index="${i}" class="participant-name" aria-label="話者の名前" value="${esc(x.name)}">${x.name===doc.self?'<small>自分</small>':''}</div>`).join('');
+ if(p)p.innerHTML=doc.participants.map((x,i)=>`<div class="participant-row"><button type="button" data-avatar-index="${i}" class="avatar-picker" aria-label="${esc(x.name)}のアイコンを変更"><img src="${esc(x.avatar||'./default/default-icon.png')}" alt=""></button><input data-person-index="${i}" class="participant-name" aria-label="話者の名前" value="${esc(x.name)}">${x.name===doc.self?'<small>送信側</small>':`<button type="button" class="remove-participant" data-delete-person-index="${i}" aria-label="話者 ${esc(x.name)} を削除" title="話者を削除">×</button>`}</div>`).join('');
  if(s){const old=s.value||s.dataset.preferred||doc.self;s.innerHTML=doc.participants.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');s.value=doc.participants.some(p=>p.name===old)?old:doc.self;}
  if(gallery && gallery.closest('.menu-expand')?.classList.contains('expanded')){const missing=doc.items.filter(x=>mediaKind(x)&&!x.media?.data);
   gallery.innerHTML=missing.length?missing.map(x=>`<button type="button" class="gallery-tile" data-pick-media="${esc(x.id)}" aria-label="${esc(x.content)}の素材を選択"><img src="${missingAsset(mediaKind(x))}" alt=""><span>${esc(x.content)}</span></button>`).join(''):'<p>未指定の写真・動画・ファイルはありません。</p>';
@@ -274,10 +274,14 @@ function importParsed(parsed,selfChoice,mode){
  status('TXT履歴を編集用に読み込みました。原本は変更しません');
 }
 function setIdentityAndMode(self,mode){
- mutate(d=>{d.self=self||d.self;d.mode=mode||d.mode;
-  if(!d.participants.some(p=>p.name===d.self))d.participants.push({name:d.self,avatar:''});
+ const oldSelf=doc.self,composer=E('composeSpeaker');
+ const composerWasSelf=!!composer&&composer.value===oldSelf;
+ mutate(d=>{
+  d.self=self&&d.participants.some(p=>p.name===self)?self:d.self;
+  d.mode=mode||d.mode;
   d.items.forEach(i=>{if(i.side!=='system')i.side=i.speaker===d.self?'me':'you';});
  });
+ if(composerWasSelf&&composer){composer.dataset.preferred=doc.self;composer.value=doc.self;}
 }
 window.talkEditor={loadParsed:importParsed,setIdentityAndMode,getProject:()=>JSON.parse(snapshot()),
  addItem,undo,redo,exportProject:exportJson,exportTxt,importProject:importJson,replaceProject:p=>mutate(()=>{doc=sanitize(p);}),render};
@@ -324,7 +328,27 @@ on('participantList','change',e=>{
   d.items.forEach(it=>{if(it.speaker===old)it.speaker=name;});
  });
 });
-on('participantList','click',e=>{const btn=e.target.closest('[data-avatar-index]');if(btn)pick(null,Number(btn.dataset.avatarIndex));});
+on('participantList','click',e=>{
+ const remove=e.target.closest('[data-delete-person-index]');
+ if(remove){
+  const i=Number(remove.dataset.deletePersonIndex),name=doc.participants[i]?.name;
+  if(!name)return;
+  if(name===doc.self){status('送信側の話者は削除できません。先に送信側を変更してください',true);return;}
+  const affected=doc.items.filter(it=>it.side==='you'&&it.speaker===name).length;
+  const replacement=peerOf({participants:doc.participants.filter(p=>p.name!==name),self:doc.self})||'相手';
+  if(affected&&!confirm(`話者「${name}」を削除すると、該当する${affected}件のメッセージを「${replacement}」に変更します。続けますか？`))return;
+  mutate(d=>{
+   d.participants.splice(i,1);
+   const target=affected?ensurePeer(d):peerOf(d);
+   d.items.forEach(it=>{
+    if(it.speaker===name)it.speaker=target||'';
+    if(it.previousSpeaker===name)it.previousSpeaker=target||'';
+   });
+  });
+  status('話者を削除しました');return;
+ }
+ const btn=e.target.closest('[data-avatar-index]');if(btn)pick(null,Number(btn.dataset.avatarIndex));
+});
 on('settingsBackdrop','click',e=>{
  const row=e.target.closest('[data-toggle-section]');
  if(row){
