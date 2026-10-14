@@ -512,7 +512,7 @@ function beginDrag(info){
  try{row.setPointerCapture?.(info.pointerId);}catch{}
  row.classList.add('is-moving');document.body.classList.add('editor-dragging');
  guide=document.createElement('div');guide.className='editor-drop-guide';
- guide.innerHTML='<span>相手</span><span>システム</span><span>自分</span>';
+ guide.innerHTML=`<span>${esc(group()?'相手側':peer())}</span><span>システム</span><span>${esc(doc.self)}</span>`;
  drag.guides=Array.from(guide.children);
  document.body.appendChild(guide);
  Object.assign(guide.style,{left:bounds.left+'px',top:bounds.top+'px',
@@ -583,16 +583,19 @@ transcript.addEventListener('pointerup',e=>{
   const [it]=d.items.splice(old,1);
   if(zone==='system'){
    if(it.type!=='date'&&it.type!=='system'){it.previousType=it.type;it.type='system';}
-   it.side='system';it.speaker='';
+   if(it.speaker&&it.speaker!==d.self)it.previousSpeaker=it.speaker;
+    it.side='system';it.speaker='';
   }else{
    if(it.type==='system')it.type=['text','attachment','call'].includes(it.previousType)?it.previousType:'text';
    if(it.type==='date')it.type='text';
    const oldSide=it.side;
    it.side=zone;
-   // Keep each original group participant when moving only within the peer side.
-   if(zone==='me')it.speaker=d.self;
-   else if(oldSide!=='you'||!it.speaker||it.speaker===d.self)
-     it.speaker=d.participants.find(p=>p.name!==d.self)?.name||'相手';
+   // Restore original peer after moving through self or system.
+    if(zone==='me'){
+     if(oldSide==='you'&&it.speaker&&it.speaker!==d.self)it.previousSpeaker=it.speaker;
+     it.speaker=d.self;
+    }else if(oldSide!=='you'||!it.speaker||it.speaker===d.self)
+     it.speaker=ensurePeer(d,it.previousSpeaker);
   }
   d.items.splice(Math.max(0,Math.min(pos,d.items.length)),0,it);
  });
