@@ -40,8 +40,8 @@ test('new extra participant can be removed without changing existing messages; u
  assert.match(v.controls.participantList.innerHTML,/data-delete-person-index="2"/);
  assert.doesNotMatch(v.controls.participantList.innerHTML,/data-delete-person-index="0"/);
  v.remove(2);
- assert.deepEqual(v.project().participants.map(p=>p.name),['Alice','Bob']);
- assert.deepEqual(v.project().items.map(i=>i.speaker),['Alice','Bob']);
+ assert.deepEqual(Array.from(v.project().participants,p=>p.name),['Alice','Bob']);
+ assert.deepEqual(Array.from(v.project().items,i=>i.speaker),['Alice','Bob']);
  v.editor.undo();assert.equal(v.project().participants.length,3);
  v.editor.redo();assert.equal(v.project().participants.length,2);
 });
@@ -69,10 +69,10 @@ test('no peer left after deletion: new incoming message creates explicit valid p
  d.participants=[{name:'Alice',avatar:''},{name:'Guest',avatar:''}];
  d.items=[speaker('aaa','me','Alice')];
  v.replace(d);v.remove(1);
- assert.deepEqual(v.project().participants.map(p=>p.name),['Alice']);
+ assert.deepEqual(Array.from(v.project().participants,p=>p.name),['Alice']);
  v.editor.addItem('text','you','hello');
  assert.equal(v.project().items[1].speaker,'相手');
- assert.deepEqual(v.project().participants.map(p=>p.name),['Alice','相手']);
+ assert.deepEqual(Array.from(v.project().participants,p=>p.name),['Alice','相手']);
 });
 test('side and speaker stay coherent for restored and edited projects',()=>{
  const v=creator(),d=base();
@@ -97,5 +97,5 @@ test('side and speaker stay coherent for restored and edited projects',()=>{
 test('duplicate participant names in saved JSON collapse to one identity',()=>{
  const v=creator(),d=base();d.participants.push({name:'Bob',avatar:''});
  v.replace(d);
- assert.deepEqual(v.project().participants.map(p=>p.name),['Alice','Bob','Guest']);
+ assert.deepEqual(Array.from(v.project().participants,p=>p.name),['Alice','Bob','Guest']);
 });
