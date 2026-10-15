@@ -49,7 +49,6 @@ def main():
                     page.wait_for_function("getComputedStyle(document.querySelector('#conversationTitle')).fontSize!=='27px'")
                     panel.locator("#redo").click()
                     page.wait_for_function("getComputedStyle(document.querySelector('#conversationTitle')).fontSize==='27px'")
-                    panel.locator("#pick").click()
                     panel.locator("#preview").click()
                     page.locator("#composeInput").fill("pilot-message")
                     page.locator("#sendButton").click()
