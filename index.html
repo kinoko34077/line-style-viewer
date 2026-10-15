@@ -87,5 +87,23 @@
   <script src="script.js"></script>
   <script src="txt-export.js"></script>
   <script src="editor.js"></script>
+  <script type="module">
+    // M3 independent static-page pilot; never import the editor in normal visits.
+    if (new URL(location.href).searchParams.get("visual_editor_v2") === "1") {
+      import("./visual-editor-platform/ui.mjs").then(({mountVisualEditor}) => mountVisualEditor({
+        nodeMap: {
+          "line.shell": "appShell",
+          "line.conversation.title": "conversationTitle",
+          "line.settings.title": "settingsTitle",
+          "line.source.status": "sourceStatus"
+        },
+        target: {
+          appId: "line-style-viewer", routeId: "main",
+          templateId: "conversation-shell", sourceRevision: "line-shell-v1"
+        },
+        storageKey: "line-style-viewer:visual-editor-v2:v1"
+      })).catch(error => console.error("Opt-in visual editor pilot:", error));
+    }
+  </script>
 </body>
 </html>
