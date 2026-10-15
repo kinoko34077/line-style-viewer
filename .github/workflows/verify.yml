@@ -16,4 +16,6 @@ jobs:
       - name: Parser and viewer lifecycle regression tests
         run: node --test tests/*.test.cjs
       - name: Cross-site visual editor contract regression
-        run: node --test visual-editor-platform/core.test.mjs
+        run: |
+          node visual-editor-platform/verify-vendor.mjs
+          node --test visual-editor-platform/core.test.mjs visual-editor-platform/export.test.mjs

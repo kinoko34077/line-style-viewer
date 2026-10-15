@@ -38,6 +38,12 @@ def main():
                     panel.locator("#value").fill("27px")
                     panel.locator("#apply").click()
                     page.wait_for_function("getComputedStyle(document.querySelector('#conversationTitle')).fontSize==='27px'")
+                    with page.expect_download() as css_download:
+                        panel.locator("#exportcss").click()
+                    assert css_download.value.suggested_filename=="visual-editor-overrides.css"
+                    with page.expect_download() as proposal_download:
+                        panel.locator("#exportpatch").click()
+                    assert proposal_download.value.suggested_filename=="visual-editor-proposal.json"
                     assert page.evaluate("window.talkEditor.getProject()")==app_before
                     assert "27px" in page.evaluate("localStorage.getItem('line-style-viewer:visual-editor-v2:v1')")
                     page.evaluate("""() => {
