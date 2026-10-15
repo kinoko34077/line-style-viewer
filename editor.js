@@ -97,19 +97,19 @@ function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(
  req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('document'))req.result.createObjectStore('document');};
  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 async function saveCache(serialized){
- const database=await database();
+ const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=database.transaction('document','readwrite');
+  const tx=db.transaction('document','readwrite');
   tx.objectStore('document').put(serialized,'active');
-  tx.oncomplete=()=>{database.close();resolve();};
-  tx.onerror=()=>{database.close();reject(tx.error);};
+  tx.oncomplete=()=>{db.close();resolve();};
+  tx.onerror=()=>{db.close();reject(tx.error);};
  });}
 async function readCache(){
- const database=await database();
+ const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=database.transaction('document','readonly'),r=tx.objectStore('document').get('active');
+  const tx=db.transaction('document','readonly'),r=tx.objectStore('document').get('active');
   r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);
-  tx.oncomplete=()=>database.close();
+  tx.oncomplete=()=>db.close();
  });}
 // Serialize cache writes, so a delayed earlier IndexedDB transaction
 // cannot finish after and replace a newer edited document.
@@ -138,7 +138,10 @@ async function restore(){
  const version=dbCounter;
  try{
   let s;
-  try{s=await readCache();}catch{s=localStorage.getItem('line-style-editor-cache-backup');}
+  try{s=await readCache();}catch{}
+  // Earlier releases saved only to localStorage; an empty new IndexedDB must
+  // not hide the owner's existing draft when this storage path is repaired.
+  if(!s)s=localStorage.getItem('line-style-editor-cache-backup');
   if(s&&!touched&&version===dbCounter){doc=sanitize(JSON.parse(s));status('前回のトークを復元しました');}
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
