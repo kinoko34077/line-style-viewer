@@ -64,8 +64,22 @@ def main():
             saved(page,"ブラウザ内に自動保存しました")
             assert "IDB-FIRST" in page.evaluate(READ_DB)
             page.evaluate("window.talkEditor.addItem('text','me','IDB-SECOND')")
-            saved(page,"ブラウザ内に自動保存しました")
-            assert "IDB-SECOND" in page.evaluate(READ_DB)
+            # Save status already contains the first success. Poll the *actual*
+            # second IndexedDB transaction, not the stale preceding toast.
+            page.wait_for_function("""async () => {
+              const db=await new Promise((ok,fail)=>{
+                const r=indexedDB.open('line-style-editor-cache',1);
+                r.onsuccess=()=>ok(r.result);r.onerror=()=>fail(r.error);
+              });
+              try {
+                const raw=await new Promise((ok,fail)=>{
+                  const tx=db.transaction('document','readonly');
+                  const r=tx.objectStore('document').get('active');
+                  r.onsuccess=()=>ok(r.result);r.onerror=()=>fail(r.error);
+                });
+                return raw?.includes('IDB-SECOND') ?? false;
+              } finally { db.close(); }
+            }""", timeout=20000)
             page.reload(wait_until="load")
             page.wait_for_function("window.talkEditor?.getProject().items.length===2")
             assert texts(page)==["IDB-FIRST","IDB-SECOND"]
