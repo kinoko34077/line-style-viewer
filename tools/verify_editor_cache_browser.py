@@ -81,8 +81,13 @@ def main():
               } finally { db.close(); }
             }""", timeout=20000)
             page.reload(wait_until="load")
-            page.wait_for_function("window.talkEditor?.getProject().items.length===2")
-            assert texts(page)==["IDB-FIRST","IDB-SECOND"]
+            page.wait_for_timeout(1000)
+            actual=texts(page)
+            print("PRIMARY_REOPEN_DIAGNOSTIC",json.dumps({
+                "items":actual,"status":page.locator("#sourceStatus").inner_text(),
+                "dbItems":len(json.loads(page.evaluate(READ_DB))["items"])
+            },ensure_ascii=False),flush=True)
+            assert actual==["IDB-FIRST","IDB-SECOND"]
             c.close()
             # Previously issued releases saved only to localStorage.
             c,page=open_page(browser,url)
