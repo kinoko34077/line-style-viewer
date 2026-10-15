@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "package": "@kinotch/visual-editor-platform",
+  "version": "0.5.0",
+  "canonicalRepository": "kinoko34077/frequency-warp-vst",
+  "sourceCommit": "eb62ed1ce5f12c1af2b1692853b84fb26eff700b",
+  "files": {
+    "core.mjs": "aa409cd9f92cbf2e1069cda7a0f2238dd182d725",
+    "dom-adapter.mjs": "2d9e305ec1773616c6d4b3579fdfefc473a755a1",
+    "model-adapter.mjs": "cc43e08a11c81eff5a6c4b320d5ec82992874e06",
+    "profiles.mjs": "96fba88b36d758956dda095df70622503abd7d11",
+    "export.mjs": "d592b1ca416b6183a7fdaa30c796180fcbc2291c",
+    "ui.mjs": "223d5fe52759f29d429dd7963d7b7d25931455be",
+    "index.mjs": "9fdef7c5a4dcd1d1e98e33974d69c2332161e31b",
+    "package.json": "99173c44b983d613c048257a7b53cb714bf0d482"
+  }
+}
