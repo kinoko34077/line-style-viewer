@@ -80,6 +80,16 @@ def main():
                 return raw?.includes('IDB-SECOND') ?? false;
               } finally { db.close(); }
             }""", timeout=20000)
+            print("PRIMARY_PRE_RELOAD",json.dumps({
+                "items":texts(page),
+                "dbItems":[i["content"] for i in json.loads(page.evaluate(READ_DB))["items"]],
+                "status":page.locator("#sourceStatus").inner_text()
+            }),flush=True)
+            page.wait_for_timeout(1000)
+            print("PRIMARY_PRE_RELOAD_LATE",json.dumps({
+                "dbItems":[i["content"] for i in json.loads(page.evaluate(READ_DB))["items"]],
+                "status":page.locator("#sourceStatus").inner_text()
+            }),flush=True)
             page.reload(wait_until="load")
             page.wait_for_timeout(1000)
             actual=texts(page)
