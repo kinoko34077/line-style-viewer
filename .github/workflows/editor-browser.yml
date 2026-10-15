@@ -12,6 +12,7 @@ on:
       - tools/verify_visual_editor_v2.py
       - script.js
       - tools/verify_editor_browser.py
+      - tools/verify_editor_cache_browser.py
       - .github/workflows/editor-browser.yml
   workflow_dispatch:
 
@@ -29,7 +30,9 @@ jobs:
           python3 -m pip install --quiet playwright
           python3 -m playwright install chromium
       - name: Verify editor UI, saving, history, drag and project round-trip
-        run: python3 tools/verify_editor_browser.py
+        run: |
+          python3 tools/verify_editor_browser.py
+          python3 tools/verify_editor_cache_browser.py
       - name: Validate opt-in cross-site visual editor in Chrome
         run: python3 tools/verify_visual_editor_v2.py
       - name: Save anonymous editor screenshot
