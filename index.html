@@ -87,5 +87,16 @@
   <script src="script.js"></script>
   <script src="txt-export.js"></script>
   <script src="editor.js"></script>
+  <script type="module">
+    // M3 independent static-page pilot; never import the editor in normal visits.
+    if (new URL(location.href).searchParams.get("visual_editor_v2") === "1") {
+      Promise.all([
+        import("./visual-editor-platform/ui.mjs"),
+        import("./visual-editor-platform/site-profile.mjs")
+      ]).then(([{mountVisualEditor},{lineVisualEditorConfig}]) =>
+        mountVisualEditor(lineVisualEditorConfig)
+      ).catch(error => console.error("Opt-in visual editor:", error));
+    }
+  </script>
 </body>
 </html>

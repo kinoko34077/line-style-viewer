@@ -24,12 +24,19 @@ jobs:
       - name: Checkout accepted main
         uses: actions/checkout@v4
       - name: Regression gate before publishing public site
-        run: node --test tests/*.test.cjs
+        run: |
+          node --test tests/*.test.cjs
+          node visual-editor-platform/verify-vendor.mjs
+          node --test visual-editor-platform/core.test.mjs visual-editor-platform/export.test.mjs
       - name: Stage only static public application assets
         run: |
           mkdir -p _site
           cp index.html script.js editor.js txt-export.js style.css editor.css _site/
           cp -R default _site/
+          mkdir -p _site/visual-editor-platform
+          cp visual-editor-platform/{core,dom-adapter,model-adapter,profiles,export,ui,site-profile}.mjs _site/visual-editor-platform/
+          test -s _site/visual-editor-platform/site-profile.mjs
+          test -s _site/visual-editor-platform/export.mjs
           touch _site/.nojekyll
           test -f _site/index.html
           test -f _site/txt-export.js
@@ -52,7 +59,11 @@ jobs:
             if curl --fail --silent --show-error --location --max-time 20 "$site/" -o /tmp/line-index.html &&
                grep -q 'txt-export.js' /tmp/line-index.html &&
                curl --fail --silent --show-error --location --max-time 20 "$site/txt-export.js" -o /tmp/line-txt-export.js &&
-               grep -q 'createLineTxt' /tmp/line-txt-export.js; then
+               grep -q 'createLineTxt' /tmp/line-txt-export.js &&
+               curl --fail --silent --show-error --location --max-time 20 "$site/visual-editor-platform/site-profile.mjs" -o /tmp/line-ve-profile.mjs &&
+               grep -q 'lineVisualEditorConfig' /tmp/line-ve-profile.mjs &&
+               curl --fail --silent --show-error --location --max-time 20 "$site/visual-editor-platform/export.mjs" -o /tmp/line-ve-export.mjs &&
+               grep -q 'exportCss' /tmp/line-ve-export.mjs; then
               echo "LIVE_PAGES_VERIFIED=$site/"
               exit 0
             fi

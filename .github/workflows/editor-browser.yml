@@ -8,6 +8,8 @@ on:
       - txt-export.js
       - tests/txt-export.test.cjs
       - index.html
+      - "visual-editor-platform/**"
+      - tools/verify_visual_editor_v2.py
       - script.js
       - tools/verify_editor_browser.py
       - .github/workflows/editor-browser.yml
@@ -28,6 +30,8 @@ jobs:
           python3 -m playwright install chromium
       - name: Verify editor UI, saving, history, drag and project round-trip
         run: python3 tools/verify_editor_browser.py
+      - name: Validate opt-in cross-site visual editor in Chrome
+        run: python3 tools/verify_visual_editor_v2.py
       - name: Save anonymous editor screenshot
         if: always()
         uses: actions/upload-artifact@v4

@@ -15,3 +15,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Parser and viewer lifecycle regression tests
         run: node --test tests/*.test.cjs
+      - name: Cross-site visual editor contract regression
+        run: |
+          node visual-editor-platform/verify-vendor.mjs
+          node --test visual-editor-platform/core.test.mjs visual-editor-platform/export.test.mjs
+      - name: Verify exact public Pages package staging
+        run: |
+          mkdir -p _site/visual-editor-platform
+          cp visual-editor-platform/{core,dom-adapter,model-adapter,profiles,export,ui,site-profile}.mjs _site/visual-editor-platform/
+          for file in core dom-adapter model-adapter profiles export ui site-profile; do
+            test -s "_site/visual-editor-platform/$file.mjs"
+          done
+          test ! -e "_site/visual-editor-platform/export.test.mjs"
+          test ! -e "_site/visual-editor-platform/vendor-lock.json"
