@@ -96,20 +96,38 @@ function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(
  const req=indexedDB.open('line-style-editor-cache',1);
  req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('document'))req.result.createObjectStore('document');};
  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+// Sibling record preserves the original document/active JSON string contract.
+// Transactions atomically compare the revision observed when this tab restored.
+let baseCacheRevision=null;
 async function saveCache(serialized){
  const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=db.transaction('document','readwrite');
-  tx.objectStore('document').put(serialized,'active');
-  tx.oncomplete=()=>{db.close();resolve();};
-  tx.onerror=()=>{db.close();reject(tx.error);};
+  const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
+  const observed=store.get('active-revision');
+  let conflict=false,nextRevision=null;
+  observed.onsuccess=()=>{
+   if((observed.result??null)!==baseCacheRevision){
+    conflict=true;tx.abort();return;
+   }
+   nextRevision=identifier();
+   store.put(serialized,'active');
+   store.put(nextRevision,'active-revision');
+  };
+  tx.oncomplete=()=>{db.close();baseCacheRevision=nextRevision;resolve();};
+  tx.onabort=()=>{
+   db.close();
+   const error=Error(conflict?'他のタブの更新と競合しました':'IndexedDB保存失敗');
+   if(conflict)error.code='CACHE_CONFLICT';
+   reject(error);
+  };
  });}
 async function readCache(){
  const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=db.transaction('document','readonly'),r=tx.objectStore('document').get('active');
-  r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);
-  tx.oncomplete=()=>db.close();
+  const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+  const raw=store.get('active'),revision=store.get('active-revision');
+  tx.oncomplete=()=>{db.close();resolve({value:raw.result,revision:revision.result??null});};
+  tx.onabort=()=>{db.close();reject(tx.error||Error('IndexedDB読込失敗'));};
  });}
 // Serialize cache writes, so a delayed earlier IndexedDB transaction
 // cannot finish after and replace a newer edited document.
@@ -127,8 +145,14 @@ function schedule(){
   try{
    await saveQueue;
    if(n===dbCounter)status('ブラウザ内に自動保存しました');
-  }catch{
+  }catch(error){
    if(n!==dbCounter)return;
+   // Competing tabs must not silently overwrite the legacy fallback either.
+   // Keep this tab's unsaved document available for explicit JSON export.
+   if(error?.code==='CACHE_CONFLICT'){
+    status('別タブでトークが更新されました。このタブの内容は右上の保存でJSON書き出ししてください',true);
+    return;
+   }
    try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);status('簡易キャッシュに自動保存しました');}
    catch{status('自動保存ができません。右上の保存でJSONを書き出してください',true);}
   }
@@ -138,7 +162,7 @@ async function restore(){
  const version=dbCounter;
  try{
   let s;
-  try{s=await readCache();}catch{}
+  try{const saved=await readCache();s=saved.value;baseCacheRevision=saved.revision;}catch{}
   // Earlier releases saved only to localStorage; an empty new IndexedDB must
   // not hide the owner's existing draft when this storage path is repaired.
   if(!s)s=localStorage.getItem('line-style-editor-cache-backup');
