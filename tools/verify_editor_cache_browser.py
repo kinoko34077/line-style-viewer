@@ -264,6 +264,28 @@ def main():
             assert "LEGACY-FIRST" in firstNew.evaluate(READ_DB)
             print("LEGACY_TAB_FIRST_WRITE_GUARD_PASS",flush=True)
             c.close()
+            # Existing nonempty IDB snapshot must not mask a later localStorage
+            # fallback and produce a false green "saved" banner on reload.
+            c,dirty=open_page(browser,url)
+            dirty.evaluate("window.talkEditor.addItem('text','me','DURABLE-ORIGINAL')")
+            saved(dirty,"ブラウザ内に自動保存しました")
+            dirty.evaluate("""() => {
+              const original=IDBDatabase.prototype.transaction;
+              IDBDatabase.prototype.transaction=function(name,mode,...args){
+                if(mode==='readwrite')throw Error('QuotaExceededError: simulated');
+                return original.call(this,name,mode,...args);
+              };
+            }""")
+            dirty.evaluate("window.talkEditor.addItem('text','me','MEMORY-ONLY-NEW')")
+            dirty.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('保存先の更新に失敗しました')""",
+              timeout=20000)
+            assert dirty.locator('#editorErrorToast').is_visible()
+            assert texts(dirty)==["DURABLE-ORIGINAL","MEMORY-ONLY-NEW"]
+            assert "MEMORY-ONLY-NEW" not in dirty.evaluate(READ_DB)
+            assert dirty.evaluate("localStorage.getItem('line-style-editor-cache-backup')") is None
+            print("IDB_WRITE_FAIL_NO_FALSE_FALLBACK_PASS",flush=True)
+            c.close()
             browser.close()
             print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure/cross-tab-CAS",
                   flush=True)
