@@ -168,6 +168,48 @@ def main():
             )
             print("CROSS_TAB_REVISION_CONFLICT_PASS",flush=True)
             c.close()
+            # A delayed initial read must not grant a fresh blank editor
+            # authority to overwrite a previously saved nonempty document.
+            c,seed=open_page(browser,url)
+            seed.evaluate("window.talkEditor.addItem('text','me','RESTORE-MUST-PRESERVE')")
+            saved(seed,"ブラウザ内に自動保存しました")
+            seed.close()
+            late=c.new_page()
+            late.add_init_script("""(() => {
+              const nativeDB=window.indexedDB;
+              let first=true;
+              Object.defineProperty(window,'indexedDB',{
+                configurable:true,
+                value:{open(...args) {
+                  const request=nativeDB.open(...args);
+                  if(!first)return request;
+                  first=false;
+                  return new Proxy(request,{
+                    get(target,key) {return Reflect.get(target,key,target);},
+                    set(target,key,value) {
+                      if(key==='onsuccess'){
+                        target.onsuccess=event=>setTimeout(()=>value(event),900);
+                        return true;
+                      }
+                      return Reflect.set(target,key,value,target);
+                    }
+                  });
+                }}
+              });
+            })();""")
+            late.goto(url,wait_until="load")
+            late.wait_for_function("!!window.talkEditor?.getProject")
+            late.evaluate("window.talkEditor.addItem('text','me','EARLY-UNRESTORED-EDIT')")
+            late.wait_for_function("""() =>
+                document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+                timeout=20000)
+            assert "EARLY-UNRESTORED-EDIT" in texts(late)
+            actual=json.loads(late.evaluate(READ_DB))
+            assert [i["content"] for i in actual["items"]]==["RESTORE-MUST-PRESERVE"], (
+                "fast edit before async restore must not overwrite the saved project"
+            )
+            print("EARLY_RESTORE_RACE_DENIED_PASS",flush=True)
+            c.close()
             browser.close()
             print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure/cross-tab-CAS",
                   flush=True)
