@@ -286,6 +286,24 @@ def main():
             assert dirty.evaluate("localStorage.getItem('line-style-editor-cache-backup')") is None
             print("IDB_WRITE_FAIL_NO_FALSE_FALLBACK_PASS",flush=True)
             c.close()
+            # Integrated #62 warning-only behavior must remain coherent with
+            # the revision CAS, startup restore and fail-closed save guards.
+            c,warning=open_page(browser,url)
+            probe="""() => {
+              const e=new Event('beforeunload',{cancelable:true});
+              window.dispatchEvent(e);return e.defaultPrevented;
+            }"""
+            assert warning.evaluate(probe) is False
+            warning.evaluate("window.talkEditor.addItem('text','me','DIRTY-WARN')")
+            assert warning.evaluate(probe) is True
+            saved(warning,"ブラウザ内に自動保存しました")
+            assert warning.evaluate(probe) is False
+            inline=warning.locator('[data-edit-body]').first
+            inline.dblclick()
+            inline.fill('INLINE-WARN-PENDING')
+            assert warning.evaluate(probe) is True
+            print("INTEGRATED_CAS_DIRTY_UNLOAD_PASS",flush=True)
+            c.close()
             browser.close()
             print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure/cross-tab-CAS",
                   flush=True)
