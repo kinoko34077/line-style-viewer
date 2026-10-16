@@ -145,8 +145,27 @@ def main():
             saved(page,"自動保存ができません。右上の保存でJSONを書き出してください")
             assert page.locator("#editorErrorToast").is_visible()
             c.close()
+            # #47 browser-native event integration: only dirty state vetoes the
+            # unload event. Synthetic dispatch checks the actual DOM listener,
+            # not the browser's user-activation-dependent native dialog UI.
+            c,page=open_page(browser,url)
+            probe="""() => {
+              const event=new Event('beforeunload',{cancelable:true});
+              window.dispatchEvent(event);
+              return event.defaultPrevented;
+            }"""
+            assert page.evaluate(probe) is False, 'clean project must not warn'
+            page.evaluate("window.talkEditor.addItem('text','me','UNSAVED-NATIVE')")
+            assert page.evaluate(probe) is True, 'pending IndexedDB debounce must warn'
+            saved(page,"ブラウザ内に自動保存しました")
+            assert page.evaluate(probe) is False, 'acknowledged IDB transaction must clear warning'
+            body=page.locator('[data-edit-body]').first
+            body.dblclick()
+            body.fill('INLINE-NOT-FLUSHED')
+            assert page.evaluate(probe) is True, 'inline editor pending input must warn'
+            c.close()
             browser.close()
-            print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure",
+            print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure/unsaved-unload",
                   flush=True)
     finally:
         server.shutdown()
