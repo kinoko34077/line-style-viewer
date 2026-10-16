@@ -7,7 +7,7 @@ const identifier=()=>crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+
 const clock=()=>new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false});
 const today=()=>{const d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'('+'日月火水木金土'[d.getDay()]+')';};
 const blank=()=>({version:1,title:'トーク',self:'自分',mode:'direct',scale:120,theme:'normal',participants:[{name:'自分',avatar:''},{name:'相手',avatar:''}],items:[]});
-let doc=blank(),history=[],future=[],timer,dbCounter=0,loaded=false,touched=false,mediaTarget=null,drag=null;
+let doc=blank(),history=[],future=[],timer,dbCounter=0,lastPersistedCounter=0,inlineEditPending=false,loaded=false,touched=false,mediaTarget=null,drag=null;
 let selectedEntryId=null;
 let lastTap={id:null,at:0};
 // Keep repeated edits to large inline photos from multiplying memory without bound.
@@ -158,7 +158,7 @@ function schedule(){
   });
   try{
    await saveQueue;
-   if(n===dbCounter)status('ブラウザ内に自動保存しました');
+   if(n===dbCounter){lastPersistedCounter=n;status('ブラウザ内に自動保存しました');}
   }catch(error){
    if(n!==dbCounter)return;
    // Competing tabs must not silently overwrite the legacy fallback either.
@@ -174,7 +174,7 @@ function schedule(){
     status('保存先の更新に失敗しました。右上の保存でJSONを書き出してください',true);
     return;
    }
-   try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);status('簡易キャッシュに自動保存しました');}
+   try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);lastPersistedCounter=n;status('簡易キャッシュに自動保存しました');}
    catch{status('自動保存ができません。右上の保存でJSONを書き出してください',true);}
   }
  },450);
@@ -202,6 +202,14 @@ async function restore(){
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
 }
+// Only warn while a local edit is not durably acknowledged, including an
+// inline input still waiting for its edit debounce or a detected cache clash.
+// This is best-effort: mobile Safari/forced page kills may ignore beforeunload.
+window.addEventListener?.('beforeunload',event=>{
+ if(dbCounter<=lastPersistedCounter&&!inlineEditPending&&!restoreMismatch)return;
+ event.preventDefault();
+ event.returnValue='';
+});
 const itemById=id=>doc.items.find(i=>i.id===id);
 const peer=()=>peerOf(doc)||'相手';
 const group=()=>doc.mode==='group'||doc.mode==='auto'&&new Set(doc.items.filter(i=>i.side!=='system').map(i=>i.speaker).filter(Boolean)).size>=3;
@@ -446,6 +454,7 @@ const editorNode=el=>el?.matches('[data-edit-body],[data-edit-time]');
 function readEdit(el){return el.hasAttribute('data-edit-body')?el.innerText.replace(/\r/g,'').replace(/\n$/,''):el.value;}
 function flush(el,withoutRender=false){
  if(!editorNode(el))return;
+ inlineEditPending=false;
  const id=el.dataset.editBody||el.dataset.editTime,field=el.hasAttribute('data-edit-body')?'content':'time';
  const it=itemById(id);
  let v=readEdit(el);
@@ -475,6 +484,7 @@ transcript.addEventListener('focusout',e=>{
 });
 transcript.addEventListener('input',e=>{
  if(!editorNode(e.target))return;
+ inlineEditPending=true;
  clearTimeout(typingTimer);
  const el=e.target;
  typingTimer=setTimeout(()=>{if(el.isConnected)flush(el,true);},750);
