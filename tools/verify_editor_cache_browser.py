@@ -210,6 +210,60 @@ def main():
             )
             print("EARLY_RESTORE_RACE_DENIED_PASS",flush=True)
             c.close()
+            # Mixed-version regression: a pre-CAS tab writes the original raw
+            # key without revision metadata. New-version copy must survive.
+            c,newer=open_page(browser,url)
+            newer.evaluate("window.talkEditor.addItem('text','me','PROTECTED-V2')")
+            saved(newer,"ブラウザ内に自動保存しました")
+            direct_write="""async raw => {
+              const db=await new Promise((resolve,reject)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);
+              });
+              await new Promise((resolve,reject)=>{
+                const t=db.transaction('document','readwrite');
+                t.objectStore('document').put(raw,'active');
+                t.oncomplete=resolve;t.onabort=()=>reject(t.error);
+              }); db.close();
+            }"""
+            legacy=json.dumps(project([item("PRE-CAS-OLD-TAB")]),ensure_ascii=False)
+            newer.evaluate(direct_write,legacy)
+            assert "PRE-CAS-OLD-TAB" in newer.evaluate(READ_DB)
+            newer.reload(wait_until="load")
+            newer.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('旧タブで保存内容が変更されました')""")
+            assert texts(newer)==["PROTECTED-V2"], "new protected copy must win on reload"
+            newer.evaluate("window.talkEditor.addItem('text','me','NEVER-OVERWRITE-OLD-TAB')")
+            newer.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+              timeout=20000)
+            assert "PRE-CAS-OLD-TAB" in newer.evaluate(READ_DB)
+            protected= newer.evaluate("""async () => {
+                const db=await new Promise((ok,fail)=>{
+                  const req=indexedDB.open('line-style-editor-cache',1);
+                  req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                });
+                try{return await new Promise((ok,fail)=>{
+                  const tx=db.transaction('document','readonly');
+                  const req=tx.objectStore('document').get('active-protected');
+                  req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                });}finally{db.close();}
+            }""")
+            assert [v["content"] for v in json.loads(protected)["items"]]==["PROTECTED-V2"]
+            print("LEGACY_TAB_PROTECTED_SNAPSHOT_PASS",flush=True)
+            c.close()
+            # Before the first post-upgrade save, a legacy direct write must
+            # also abort a new-tab transaction by comparing raw active bytes.
+            c,firstNew=open_page(browser,url)
+            firstNew.wait_for_timeout(250)
+            firstNew.evaluate(direct_write,json.dumps(project([item("LEGACY-FIRST")]),ensure_ascii=False))
+            firstNew.evaluate("window.talkEditor.addItem('text','me','NOT-CLOBBER-LEGACY')")
+            firstNew.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+              timeout=20000)
+            assert "LEGACY-FIRST" in firstNew.evaluate(READ_DB)
+            print("LEGACY_TAB_FIRST_WRITE_GUARD_PASS",flush=True)
+            c.close()
             browser.close()
             print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure/cross-tab-CAS",
                   flush=True)
