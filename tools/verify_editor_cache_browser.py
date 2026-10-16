@@ -145,8 +145,31 @@ def main():
             saved(page,"自動保存ができません。右上の保存でJSONを書き出してください")
             assert page.locator("#editorErrorToast").is_visible()
             c.close()
+            # #47: both tabs capture the same original empty revision. The
+            # first tab commits atomically; stale tab must not overwrite it.
+            c,first=open_page(browser,url)
+            stale=c.new_page()
+            stale.goto(url,wait_until="load")
+            stale.wait_for_function("!!window.talkEditor?.getProject")
+            first.evaluate("window.talkEditor.addItem('text','me','PRIMARY-TAB-WINS')")
+            saved(first,"ブラウザ内に自動保存しました")
+            assert "PRIMARY-TAB-WINS" in first.evaluate(READ_DB)
+            stale.evaluate("window.talkEditor.addItem('text','me','STALE-TAB-UNSAVED')")
+            stale.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+              timeout=20000)
+            assert stale.locator('#editorErrorToast').is_visible()
+            assert texts(stale)==["STALE-TAB-UNSAVED"], "stale work stays in memory for export"
+            assert texts(first)==["PRIMARY-TAB-WINS"]
+            current=json.loads(first.evaluate(READ_DB))
+            assert [row["content"] for row in current["items"]]==["PRIMARY-TAB-WINS"]
+            assert stale.evaluate("localStorage.getItem('line-style-editor-cache-backup')") is None, (
+                "stale-tab conflict must not silently overwrite legacy backup"
+            )
+            print("CROSS_TAB_REVISION_CONFLICT_PASS",flush=True)
+            c.close()
             browser.close()
-            print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure",
+            print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure/cross-tab-CAS",
                   flush=True)
     finally:
         server.shutdown()
