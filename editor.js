@@ -7,7 +7,7 @@ const identifier=()=>crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+
 const clock=()=>new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false});
 const today=()=>{const d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'('+'日月火水木金土'[d.getDay()]+')';};
 const blank=()=>({version:1,title:'トーク',self:'自分',mode:'direct',scale:120,theme:'normal',participants:[{name:'自分',avatar:''},{name:'相手',avatar:''}],items:[]});
-let doc=blank(),history=[],future=[],timer,dbCounter=0,loaded=false,touched=false,mediaTarget=null,drag=null;
+let doc=blank(),history=[],future=[],timer,dbCounter=0,lastPersistedCounter=0,inlineEditPending=false,loaded=false,touched=false,mediaTarget=null,drag=null;
 let selectedEntryId=null;
 let lastTap={id:null,at:0};
 // Keep repeated edits to large inline photos from multiplying memory without bound.
@@ -96,20 +96,52 @@ function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(
  const req=indexedDB.open('line-style-editor-cache',1);
  req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('document'))req.result.createObjectStore('document');};
  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+// Sibling record preserves the original document/active JSON string contract.
+// Transactions atomically compare the revision observed when this tab restored.
+let baseCacheRevision=null,baseCacheRaw,restoreMismatch=false,restorePromise=Promise.resolve();
 async function saveCache(serialized){
+ // Never write a new blank-state edit over a saved document whose asynchronous
+ // startup restore has not yet finished. Waiting is local, not a network lock.
+ await restorePromise;
+ if(restoreMismatch){
+  const error=Error('復元前の編集と保存済みトークが競合しました');
+  error.code='CACHE_CONFLICT';
+  throw error;
+ }
  const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=db.transaction('document','readwrite');
-  tx.objectStore('document').put(serialized,'active');
-  tx.oncomplete=()=>{db.close();resolve();};
-  tx.onerror=()=>{db.close();reject(tx.error);};
+  const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
+  const observed=store.get('active-revision'),raw=store.get('active');
+  let conflict=false,nextRevision=null;
+  // Both probes and puts belong to one serializable IndexedDB readwrite transaction.
+  // Legacy tabs may update raw active without touching the new revision key.
+  raw.onsuccess=()=>{
+   if((observed.result??null)!==baseCacheRevision||raw.result!==baseCacheRaw){
+    conflict=true;tx.abort();return;
+   }
+   nextRevision=identifier();
+   store.put(serialized,'active');
+   store.put(serialized,'active-protected');
+   store.put(nextRevision,'active-revision');
+  };
+  tx.oncomplete=()=>{db.close();baseCacheRevision=nextRevision;baseCacheRaw=serialized;resolve();};
+  tx.onabort=()=>{
+   db.close();
+   const error=Error(conflict?'他のタブの更新と競合しました':'IndexedDB保存失敗');
+   if(conflict)error.code='CACHE_CONFLICT';
+   reject(error);
+  };
  });}
 async function readCache(){
  const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=db.transaction('document','readonly'),r=tx.objectStore('document').get('active');
-  r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);
-  tx.oncomplete=()=>db.close();
+  const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+  const raw=store.get('active'),revision=store.get('active-revision');
+  const protectedCopy=store.get('active-protected');
+  tx.oncomplete=()=>{db.close();resolve({raw:raw.result,
+   value:protectedCopy.result??raw.result,protected:protectedCopy.result,
+   revision:revision.result??null});};
+  tx.onabort=()=>{db.close();reject(tx.error||Error('IndexedDB読込失敗'));};
  });}
 // Serialize cache writes, so a delayed earlier IndexedDB transaction
 // cannot finish after and replace a newer edited document.
@@ -126,10 +158,23 @@ function schedule(){
   });
   try{
    await saveQueue;
-   if(n===dbCounter)status('ブラウザ内に自動保存しました');
-  }catch{
+   if(n===dbCounter){lastPersistedCounter=n;status('ブラウザ内に自動保存しました');}
+  }catch(error){
    if(n!==dbCounter)return;
-   try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);status('簡易キャッシュに自動保存しました');}
+   // Competing tabs must not silently overwrite the legacy fallback either.
+   // Keep this tab's unsaved document available for explicit JSON export.
+   if(error?.code==='CACHE_CONFLICT'){
+    status('別タブでトークが更新されました。このタブの内容は右上の保存でJSON書き出ししてください',true);
+    return;
+   }
+   // Existing nonempty IndexedDB state takes precedence on future restore.
+   // A fallback saved only to localStorage would be shadowed by older IDB:
+   // never call that newer backup durably auto-saved without reconciliation.
+   if(baseCacheRaw!==undefined){
+    status('保存先の更新に失敗しました。右上の保存でJSONを書き出してください',true);
+    return;
+   }
+   try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);lastPersistedCounter=n;status('簡易キャッシュに自動保存しました');}
    catch{status('自動保存ができません。右上の保存でJSONを書き出してください',true);}
   }
  },450);
@@ -137,15 +182,34 @@ function schedule(){
 async function restore(){
  const version=dbCounter;
  try{
-  let s;
-  try{s=await readCache();}catch{}
+  let s,legacyOverwrite=false;
+  try{
+   const saved=await readCache();
+   s=saved.value;
+   if(!touched&&version===dbCounter){baseCacheRevision=saved.revision;baseCacheRaw=saved.raw;}
+   // An already-open pre-CAS tab can replace raw active. Keep the newer
+   // protected snapshot and explicitly block saving until manual recovery.
+   if(saved.protected!==undefined&&saved.protected!==saved.raw){
+    restoreMismatch=true;legacyOverwrite=true;
+   }
+  }catch{}
   // Earlier releases saved only to localStorage; an empty new IndexedDB must
   // not hide the owner's existing draft when this storage path is repaired.
   if(!s)s=localStorage.getItem('line-style-editor-cache-backup');
+  if(s&&(touched||version!==dbCounter))restoreMismatch=true;
   if(s&&!touched&&version===dbCounter){doc=sanitize(JSON.parse(s));status('前回のトークを復元しました');}
+  if(legacyOverwrite)status('旧タブで保存内容が変更されました。上書きせずJSONに保存してください',true);
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
 }
+// Only warn while a local edit is not durably acknowledged, including an
+// inline input still waiting for its edit debounce or a detected cache clash.
+// This is best-effort: mobile Safari/forced page kills may ignore beforeunload.
+window.addEventListener?.('beforeunload',event=>{
+ if(dbCounter<=lastPersistedCounter&&!inlineEditPending&&!restoreMismatch)return;
+ event.preventDefault();
+ event.returnValue='';
+});
 const itemById=id=>doc.items.find(i=>i.id===id);
 const peer=()=>peerOf(doc)||'相手';
 const group=()=>doc.mode==='group'||doc.mode==='auto'&&new Set(doc.items.filter(i=>i.side!=='system').map(i=>i.speaker).filter(Boolean)).size>=3;
@@ -390,6 +454,7 @@ const editorNode=el=>el?.matches('[data-edit-body],[data-edit-time]');
 function readEdit(el){return el.hasAttribute('data-edit-body')?el.innerText.replace(/\r/g,'').replace(/\n$/,''):el.value;}
 function flush(el,withoutRender=false){
  if(!editorNode(el))return;
+ inlineEditPending=false;
  const id=el.dataset.editBody||el.dataset.editTime,field=el.hasAttribute('data-edit-body')?'content':'time';
  const it=itemById(id);
  let v=readEdit(el);
@@ -419,6 +484,7 @@ transcript.addEventListener('focusout',e=>{
 });
 transcript.addEventListener('input',e=>{
  if(!editorNode(e.target))return;
+ inlineEditPending=true;
  clearTimeout(typingTimer);
  const el=e.target;
  typingTimer=setTimeout(()=>{if(el.isConnected)flush(el,true);},750);
@@ -604,5 +670,5 @@ transcript.addEventListener('pointerup',e=>{
  });
 });
 transcript.addEventListener('pointercancel',clearDrag);
-render();restore();
+render();restorePromise=restore();
 })();
