@@ -98,7 +98,7 @@ function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(
  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 // Sibling record preserves the original document/active JSON string contract.
 // Transactions atomically compare the revision observed when this tab restored.
-let baseCacheRevision=null,restoreMismatch=false,restorePromise=Promise.resolve();
+let baseCacheRevision=null,baseCacheRaw,restoreMismatch=false,restorePromise=Promise.resolve();
 async function saveCache(serialized){
  // Never write a new blank-state edit over a saved document whose asynchronous
  // startup restore has not yet finished. Waiting is local, not a network lock.
@@ -111,17 +111,20 @@ async function saveCache(serialized){
  const db=await database();
  return new Promise((resolve,reject)=>{
   const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
-  const observed=store.get('active-revision');
+  const observed=store.get('active-revision'),raw=store.get('active');
   let conflict=false,nextRevision=null;
-  observed.onsuccess=()=>{
-   if((observed.result??null)!==baseCacheRevision){
+  // Both probes and puts belong to one serializable IndexedDB readwrite transaction.
+  // Legacy tabs may update raw active without touching the new revision key.
+  raw.onsuccess=()=>{
+   if((observed.result??null)!==baseCacheRevision||raw.result!==baseCacheRaw){
     conflict=true;tx.abort();return;
    }
    nextRevision=identifier();
    store.put(serialized,'active');
+   store.put(serialized,'active-protected');
    store.put(nextRevision,'active-revision');
   };
-  tx.oncomplete=()=>{db.close();baseCacheRevision=nextRevision;resolve();};
+  tx.oncomplete=()=>{db.close();baseCacheRevision=nextRevision;baseCacheRaw=serialized;resolve();};
   tx.onabort=()=>{
    db.close();
    const error=Error(conflict?'他のタブの更新と競合しました':'IndexedDB保存失敗');
@@ -134,7 +137,10 @@ async function readCache(){
  return new Promise((resolve,reject)=>{
   const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
   const raw=store.get('active'),revision=store.get('active-revision');
-  tx.oncomplete=()=>{db.close();resolve({value:raw.result,revision:revision.result??null});};
+  const protectedCopy=store.get('active-protected');
+  tx.oncomplete=()=>{db.close();resolve({raw:raw.result,
+   value:protectedCopy.result??raw.result,protected:protectedCopy.result,
+   revision:revision.result??null});};
   tx.onabort=()=>{db.close();reject(tx.error||Error('IndexedDB読込失敗'));};
  });}
 // Serialize cache writes, so a delayed earlier IndexedDB transaction
@@ -169,17 +175,23 @@ function schedule(){
 async function restore(){
  const version=dbCounter;
  try{
-  let s;
+  let s,legacyOverwrite=false;
   try{
    const saved=await readCache();
    s=saved.value;
-   if(!touched&&version===dbCounter)baseCacheRevision=saved.revision;
+   if(!touched&&version===dbCounter){baseCacheRevision=saved.revision;baseCacheRaw=saved.raw;}
+   // An already-open pre-CAS tab can replace raw active. Keep the newer
+   // protected snapshot and explicitly block saving until manual recovery.
+   if(saved.protected!==undefined&&saved.protected!==saved.raw){
+    restoreMismatch=true;legacyOverwrite=true;
+   }
   }catch{}
   // Earlier releases saved only to localStorage; an empty new IndexedDB must
   // not hide the owner's existing draft when this storage path is repaired.
   if(!s)s=localStorage.getItem('line-style-editor-cache-backup');
   if(s&&(touched||version!==dbCounter))restoreMismatch=true;
   if(s&&!touched&&version===dbCounter){doc=sanitize(JSON.parse(s));status('前回のトークを復元しました');}
+  if(legacyOverwrite)status('旧タブで保存内容が変更されました。上書きせずJSONに保存してください',true);
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
 }
