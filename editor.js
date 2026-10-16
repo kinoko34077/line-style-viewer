@@ -98,8 +98,16 @@ function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(
  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 // Sibling record preserves the original document/active JSON string contract.
 // Transactions atomically compare the revision observed when this tab restored.
-let baseCacheRevision=null;
+let baseCacheRevision=null,restoreMismatch=false,restorePromise=Promise.resolve();
 async function saveCache(serialized){
+ // Never write a new blank-state edit over a saved document whose asynchronous
+ // startup restore has not yet finished. Waiting is local, not a network lock.
+ await restorePromise;
+ if(restoreMismatch){
+  const error=Error('復元前の編集と保存済みトークが競合しました');
+  error.code='CACHE_CONFLICT';
+  throw error;
+ }
  const db=await database();
  return new Promise((resolve,reject)=>{
   const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
@@ -162,10 +170,15 @@ async function restore(){
  const version=dbCounter;
  try{
   let s;
-  try{const saved=await readCache();s=saved.value;baseCacheRevision=saved.revision;}catch{}
+  try{
+   const saved=await readCache();
+   s=saved.value;
+   if(!touched&&version===dbCounter)baseCacheRevision=saved.revision;
+  }catch{}
   // Earlier releases saved only to localStorage; an empty new IndexedDB must
   // not hide the owner's existing draft when this storage path is repaired.
   if(!s)s=localStorage.getItem('line-style-editor-cache-backup');
+  if(s&&(touched||version!==dbCounter))restoreMismatch=true;
   if(s&&!touched&&version===dbCounter){doc=sanitize(JSON.parse(s));status('前回のトークを復元しました');}
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
@@ -628,5 +641,5 @@ transcript.addEventListener('pointerup',e=>{
  });
 });
 transcript.addEventListener('pointercancel',clearDrag);
-render();restore();
+render();restorePromise=restore();
 })();
