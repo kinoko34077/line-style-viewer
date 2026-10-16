@@ -167,6 +167,13 @@ function schedule(){
     status('別タブでトークが更新されました。このタブの内容は右上の保存でJSON書き出ししてください',true);
     return;
    }
+   // Existing nonempty IndexedDB state takes precedence on future restore.
+   // A fallback saved only to localStorage would be shadowed by older IDB:
+   // never call that newer backup durably auto-saved without reconciliation.
+   if(baseCacheRaw!==undefined){
+    status('保存先の更新に失敗しました。右上の保存でJSONを書き出してください',true);
+    return;
+   }
    try{if(data.length>1600000)throw Error('容量超過');localStorage.setItem('line-style-editor-cache-backup',data);status('簡易キャッシュに自動保存しました');}
    catch{status('自動保存ができません。右上の保存でJSONを書き出してください',true);}
   }
