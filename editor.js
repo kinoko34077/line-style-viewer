@@ -98,6 +98,33 @@ function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(
  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
 // Sibling record preserves the original document/active JSON string contract.
 // Transactions atomically compare the revision observed when this tab restored.
+// The digest is a local ordering hint only, not identity or authentication.
+async function backupFingerprint(raw){
+ if(raw===null)return 'absent';
+ if(typeof raw!=='string'||typeof TextEncoder==='undefined'||!globalThis.crypto?.subtle?.digest)return null;
+ const digest=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
+ return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+}
+function offerRecoveryExports(idbRaw,backupRaw){
+ const toast=E('editorErrorToast');
+ if(!toast)return;
+ for(const [label,raw,file] of [
+  ['IndexedDB保存分を出力',idbRaw,'line-chat-indexeddb-recovery.linechat.json'],
+  ['簡易キャッシュ分を出力',backupRaw,'line-chat-localstorage-recovery.txt']
+ ]){
+  if(typeof raw!=='string')continue;
+  const button=document.createElement('button');
+  button.type='button';button.textContent=label;
+  button.style.marginInlineStart='0.6em';
+  button.addEventListener('click',()=>{
+   const url=URL.createObjectURL(new Blob([raw],{type:'text/plain;charset=utf-8'}));
+   const link=document.createElement('a');
+   link.href=url;link.download=file;link.click();
+   setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+  toast.appendChild(button);
+ }
+}
 let baseCacheRevision=null,baseCacheRaw,restoreMismatch=false,restorePromise=Promise.resolve();
 async function saveCache(serialized){
  // Never write a new blank-state edit over a saved document whose asynchronous
@@ -108,6 +135,10 @@ async function saveCache(serialized){
   error.code='CACHE_CONFLICT';
   throw error;
  }
+ // Fingerprint the last observed legacy copy *before* the IDB commit.
+ // A legacy tab changing localStorage later will not match this proof.
+ let backupProof=null;
+ try{backupProof=await backupFingerprint(localStorage.getItem('line-style-editor-cache-backup'));}catch{}
  const db=await database();
  return new Promise((resolve,reject)=>{
   const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
@@ -123,6 +154,7 @@ async function saveCache(serialized){
    store.put(serialized,'active');
    store.put(serialized,'active-protected');
    store.put(nextRevision,'active-revision');
+   store.put({revision:nextRevision,fingerprint:backupProof},'active-backup-provenance');
   };
   tx.oncomplete=()=>{db.close();baseCacheRevision=nextRevision;baseCacheRaw=serialized;resolve();};
   tx.onabort=()=>{
@@ -138,9 +170,10 @@ async function readCache(){
   const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
   const raw=store.get('active'),revision=store.get('active-revision');
   const protectedCopy=store.get('active-protected');
+  const backupProof=store.get('active-backup-provenance');
   tx.oncomplete=()=>{db.close();resolve({raw:raw.result,
    value:protectedCopy.result??raw.result,protected:protectedCopy.result,
-   revision:revision.result??null});};
+   revision:revision.result??null,backupProof:backupProof.result});};
   tx.onabort=()=>{db.close();reject(tx.error||Error('IndexedDB読込失敗'));};
  });}
 // Serialize cache writes, so a delayed earlier IndexedDB transaction
@@ -182,7 +215,7 @@ function schedule(){
 async function restore(){
  const version=dbCounter;
  try{
-  let s,legacyOverwrite=false,backupConflict=false,legacyBackup;
+  let s,legacyOverwrite=false,backupConflict=false,legacyBackup,conflictIdbRaw;
   try{legacyBackup=localStorage.getItem('line-style-editor-cache-backup');}catch{}
   try{
    const saved=await readCache();
@@ -198,8 +231,27 @@ async function restore(){
    // conflict and display the fallback for export without writing either copy.
    if(s!==undefined&&legacyBackup!==null&&legacyBackup!==undefined&&
       legacyBackup!==s&&legacyBackup!==saved.raw&&legacyBackup!==saved.protected){
-    restoreMismatch=true;backupConflict=true;
-    if(!touched&&version===dbCounter)s=legacyBackup;
+    // Ordinary IDB saves leave a previous localStorage fallback in place.
+    // Mere inequality is NOT evidence that the legacy copy was written later.
+    let observedAtLastCommit=false;
+    const proof=saved.backupProof;
+    if(proof&&proof.revision===saved.revision&&typeof proof.fingerprint==='string'){
+     try{observedAtLastCommit=(await backupFingerprint(legacyBackup))===proof.fingerprint;}
+     catch{}
+    }
+    if(!observedAtLastCommit){
+     restoreMismatch=true;backupConflict=true;conflictIdbRaw=s;
+     // Only a valid backup changed since an authenticated-to-this-revision
+     // local observation can be presented as a post-commit legacy candidate.
+     // Without that evidence, retain IDB on screen and export BOTH copies.
+     if(proof&&proof.revision===saved.revision&&typeof proof.fingerprint==='string'&&
+        !touched&&version===dbCounter){
+      try{
+       const parsed=JSON.parse(legacyBackup);
+       if(parsed&&Array.isArray(parsed.items))s=legacyBackup;
+      }catch{}
+     }
+    }
    }
   }catch{}
   // Earlier releases saved only to localStorage; an empty new IndexedDB must
@@ -207,7 +259,10 @@ async function restore(){
   if(!s)s=legacyBackup??localStorage.getItem('line-style-editor-cache-backup');
   if(s&&(touched||version!==dbCounter))restoreMismatch=true;
   if(s&&!touched&&version===dbCounter){doc=sanitize(JSON.parse(s));status('前回のトークを復元しました');}
-  if(backupConflict)status('IndexedDBと簡易キャッシュに異なる保存内容があります。自動上書きを停止しました。表示中の内容をJSONに保存し、簡易キャッシュも保全してください',true);
+  if(backupConflict){
+   status('IndexedDBと簡易キャッシュに異なる保存内容があります。自動保存を停止し、両コピーを保全しました。必要な方を出力してください',true);
+   offerRecoveryExports(conflictIdbRaw,legacyBackup);
+  }
   else if(legacyOverwrite)status('旧タブで保存内容が変更されました。上書きせずJSONに保存してください',true);
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
