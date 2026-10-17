@@ -77,7 +77,22 @@ function status(s,error=false){
  // Error status cannot live solely in the hidden settings pane:
  // autosave quota failures need an always-visible, screenreader-announced alert.
  const toast=E('editorErrorToast');
- if(toast){toast.hidden=!error;if(error)toast.textContent=s;}
+ if(toast){
+  toast.hidden=!error;
+  if(error){
+   toast.textContent=s;
+   // Recovery tools are contextual: never add permanent chrome/menu clutter.
+   if(restoreMismatch&&typeof toast.appendChild==='function'&&document.createElement){
+    for(const [label,fn] of [
+      ['競合データを保存',downloadConflictData],['自動保存を復旧',resumeAutosave]]){
+     const button=document.createElement('button');
+     button.type='button';button.textContent=label;
+     button.className='cache-conflict-action';
+     button.addEventListener('click',fn);toast.appendChild(button);
+    }
+   }
+  }
+ }
 }
 function buttons(){if(E('undoButton'))E('undoButton').disabled=!history.length;if(E('redoButton'))E('redoButton').disabled=!future.length;}
 function mutate(fn,option={}){
@@ -138,6 +153,61 @@ async function saveCache(serialized){
    reject(error);
   };
  });}
+async function downloadConflictData(){
+ try{
+  const legacy=readLegacyBackup();
+  const saved=await readCache(legacy);
+  const bundle={format:'line-chat-conflict-backup.v1',
+    active:saved.raw??null,protected:saved.protected??null,
+    legacy:legacy.readable?legacy.value:null,current:snapshot()};
+  const blob=new Blob([JSON.stringify(bundle,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='line-chat-conflict-backup.json';
+  document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),3000);
+  status('競合中の各コピーと表示中の内容をJSONに書き出しました。内容を確保してから復旧してください',true);
+ }catch{status('競合データの書き出しに失敗しました。表示中のJSONを手動保存してください',true);}
+}
+function readLegacyBackup(){
+ try{return backupObservation(true,localStorage.getItem('line-style-editor-cache-backup'));}
+ catch{return backupObservation(false,null);}
+}
+async function resumeAutosave(){
+ if(!restoreMismatch)return;
+ if(!confirm('競合した保存内容をIDB内にも退避した上で、この画面の内容で自動保存を再開します。別タブの編集は自動的に統合しません。先に「競合データを保存」でJSONを書き出すことを推奨します。実行しますか？'))return;
+ const generation=dbCounter,chosen=snapshot(),legacy=readLegacyBackup();
+ try{
+  const before=await readCache(legacy);
+  const db=await database();
+  const nextRevision=identifier(),archiveKey='conflict-archive-'+identifier();
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
+   const raw=store.get('active'),protectedCopy=store.get('active-protected'),
+     revision=store.get('active-revision');
+   let concurrent=false;
+   revision.onsuccess=()=>{
+    if(raw.result!==before.raw||protectedCopy.result!==before.protected||
+       (revision.result??null)!==before.revision){
+     concurrent=true;tx.abort();return;
+    }
+    // An IndexedDB archive is saved in the same all-or-nothing transaction
+    // before replacing either conflicting project copy.
+    store.put({schema:1,raw:raw.result??null,protected:protectedCopy.result??null,
+      legacy:legacy.readable?legacy.value:null,chosen},archiveKey);
+    store.put(chosen,'active');
+    store.put(chosen,'active-protected');
+    store.put(nextRevision,'active-revision');
+    store.put(legacy,'legacy-backup-observed');
+   };
+   tx.oncomplete=()=>{db.close();resolve();};
+   tx.onabort=()=>{db.close();reject(Error(concurrent?'競合が更新されました':'保存容量またはIndexedDBエラー'));};
+  });
+  baseCacheRaw=chosen;baseCacheRevision=nextRevision;restoreMismatch=false;
+  if(dbCounter===generation){
+   lastPersistedCounter=generation;status('競合データを退避し、この内容で自動保存を再開しました');
+  }else{schedule();status('競合データを退避しました。追加編集の保存を再試行します');}
+ }catch{status('保存の復旧に失敗しました。競合データをJSONへ保存し、ブラウザの空き容量を確認してください',true);}
+}
 async function readCache(currentBackupObservation){
  const db=await database();
  return new Promise((resolve,reject)=>{
