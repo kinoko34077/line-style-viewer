@@ -147,9 +147,13 @@ async function readCache(currentBackupObservation){
   const legacyObservation=store.get('legacy-backup-observed');
   let observedBackup,observationCreated=false;
   legacyObservation.onsuccess=()=>{
-   if(legacyObservation.result===undefined){
-    // Keep the exact last-observed fallback as a recoverable copy in IDB.
-    // This also establishes ordering evidence for legacy tabs that write later.
+   // An earlier empty-tab startup can have registered a null backup
+   // *before* an old localStorage document A is imported. Until IDB has
+   // any document, observe A as the migration baseline. Once active or
+   // protected exists, never rewrite this provenance automatically.
+   const emptyIdb=raw.result==null&&protectedCopy.result==null;
+   if(legacyObservation.result===undefined || (
+      emptyIdb&&!sameBackupObservation(legacyObservation.result,currentBackupObservation))){
     observedBackup=currentBackupObservation;
     observationCreated=true;
     store.put(observedBackup,'legacy-backup-observed');
