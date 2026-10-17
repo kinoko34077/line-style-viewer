@@ -288,6 +288,40 @@ def main():
             }""")
             assert [v["content"] for v in json.loads(protected)["items"]]==["PROTECTED-V2"]
             print("LEGACY_TAB_PROTECTED_SNAPSHOT_PASS",flush=True)
+            # Explicit recovery must keep BOTH conflicting copies as an IDB
+            # archive, and must permit subsequent autosave without site wipe.
+            assert newer.get_by_role("button",name="自動保存を復旧").is_visible()
+            with newer.expect_download(timeout=20000) as archive_download:
+                newer.get_by_role("button",name="競合データを保存").click()
+            assert archive_download.value.suggested_filename=="line-chat-conflict-backup.json"
+            newer.once("dialog",lambda dialog:dialog.accept())
+            newer.get_by_role("button",name="自動保存を復旧").click()
+            newer.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('自動保存を再開しました')""",
+              timeout=20000)
+            newer.evaluate("window.talkEditor.addItem('text','me','SAVE-RESUMED-AFTER-CONFLICT')")
+            saved(newer,"ブラウザ内に自動保存しました")
+            assert "SAVE-RESUMED-AFTER-CONFLICT" in newer.evaluate(READ_DB)
+            archived=newer.evaluate("""async () => {
+              const db=await new Promise((ok,fail)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
+              });
+              try{return await new Promise((ok,fail)=>{
+                const tx=db.transaction('document','readonly');
+                const store=tx.objectStore('document'),req=store.getAllKeys();
+                req.onsuccess=()=>{
+                  const key=req.result.find(x=>String(x).startsWith('conflict-archive-'));
+                  if(!key){fail(Error('missing atomic archive'));return;}
+                  const value=store.get(key);value.onsuccess=()=>ok(value.result);
+                  value.onerror=()=>fail(value.error);
+                };
+                req.onerror=()=>fail(req.error);
+              });}finally{db.close();}
+            }""")
+            assert "PRE-CAS-OLD-TAB" in archived["raw"]
+            assert "PROTECTED-V2" in archived["protected"]
+            print("MISMATCH_EXPLICIT_RECOVERY_AUTOSAVE_PASS",flush=True)
             c.close()
             # Before the first post-upgrade save, a legacy direct write must
             # also abort a new-tab transaction by comparing raw active bytes.
