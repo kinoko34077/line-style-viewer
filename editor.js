@@ -71,13 +71,20 @@ function normalizeSpeakers(d){
    d.participants.push({name:it.speaker,avatar:''});
  }
 }
+let recoveryCopies=null;
 function status(s,error=false){
  const e=E('sourceStatus');
  if(e){e.textContent=s;e.dataset.state=error?'error':'ready';}
  // Error status cannot live solely in the hidden settings pane:
  // autosave quota failures need an always-visible, screenreader-announced alert.
  const toast=E('editorErrorToast');
- if(toast){toast.hidden=!error;if(error)toast.textContent=s;}
+ if(toast){
+  toast.hidden=!error;
+  if(error){
+   toast.textContent=s;
+   if(recoveryCopies)offerRecoveryExports(recoveryCopies.idbRaw,recoveryCopies.backupRaw);
+  }
+ }
 }
 function buttons(){if(E('undoButton'))E('undoButton').disabled=!history.length;if(E('redoButton'))E('redoButton').disabled=!future.length;}
 function mutate(fn,option={}){
@@ -106,6 +113,7 @@ async function backupFingerprint(raw){
  return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
 }
 function offerRecoveryExports(idbRaw,backupRaw){
+ recoveryCopies={idbRaw,backupRaw};
  const toast=E('editorErrorToast');
  if(!toast)return;
  for(const [label,raw,file] of [
