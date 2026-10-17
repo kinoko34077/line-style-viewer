@@ -318,6 +318,7 @@ def main():
             history.evaluate("window.talkEditor.addItem('text','me','MUST-NOT-WRITE')")
             history.wait_for_function("""() =>
               document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",timeout=20000)
+            assert history.locator("#editorErrorToast button").count()==2, "recovery exports remain usable after blocked autosave"
             assert "MUST-NOT-WRITE" not in history.evaluate(READ_DB)
             assert history.evaluate("localStorage.getItem('line-style-editor-cache-backup')")==later
             print("POST_COMMIT_LEGACY_BACKUP_CONFLICT_PASS",flush=True)
