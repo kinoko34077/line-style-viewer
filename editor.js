@@ -182,7 +182,8 @@ function schedule(){
 async function restore(){
  const version=dbCounter;
  try{
-  let s,legacyOverwrite=false;
+  let s,legacyOverwrite=false,backupConflict=false,legacyBackup;
+  try{legacyBackup=localStorage.getItem('line-style-editor-cache-backup');}catch{}
   try{
    const saved=await readCache();
    s=saved.value;
@@ -192,13 +193,22 @@ async function restore(){
    if(saved.protected!==undefined&&saved.protected!==saved.raw){
     restoreMismatch=true;legacyOverwrite=true;
    }
+   // Older tabs may fall back to localStorage when an IndexedDB write fails.
+   // If that backup differs from every accepted IDB copy, preserve the
+   // conflict and display the fallback for export without writing either copy.
+   if(s!==undefined&&legacyBackup!==null&&legacyBackup!==undefined&&
+      legacyBackup!==s&&legacyBackup!==saved.raw&&legacyBackup!==saved.protected){
+    restoreMismatch=true;backupConflict=true;
+    if(!touched&&version===dbCounter)s=legacyBackup;
+   }
   }catch{}
   // Earlier releases saved only to localStorage; an empty new IndexedDB must
   // not hide the owner's existing draft when this storage path is repaired.
-  if(!s)s=localStorage.getItem('line-style-editor-cache-backup');
+  if(!s)s=legacyBackup??localStorage.getItem('line-style-editor-cache-backup');
   if(s&&(touched||version!==dbCounter))restoreMismatch=true;
   if(s&&!touched&&version===dbCounter){doc=sanitize(JSON.parse(s));status('前回のトークを復元しました');}
-  if(legacyOverwrite)status('旧タブで保存内容が変更されました。上書きせずJSONに保存してください',true);
+  if(backupConflict)status('IndexedDBと簡易キャッシュに異なる保存内容があります。自動上書きを停止しました。表示中の内容をJSONに保存し、簡易キャッシュも保全してください',true);
+  else if(legacyOverwrite)status('旧タブで保存内容が変更されました。上書きせずJSONに保存してください',true);
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
 }
