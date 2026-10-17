@@ -111,6 +111,43 @@ def main():
             page.reload(wait_until="load")
             page.wait_for_function("window.talkEditor?.getProject().items.length===2")
             assert texts(page)==["LEGACY","MIGRATED"]
+            # Legacy A may remain in localStorage after current IDB B has been
+            # durably saved. A is not proof of a newer concurrent tab.
+            page.evaluate("window.talkEditor.addItem('text','me','IDB-NEWER-B')")
+            saved(page,"ブラウザ内に自動保存しました")
+            page.reload(wait_until="load")
+            page.wait_for_function("window.talkEditor?.getProject().items.length===3")
+            assert texts(page)==["LEGACY","MIGRATED","IDB-NEWER-B"]
+            page.evaluate("window.talkEditor.addItem('text','me','AFTER-RELOAD')")
+            saved(page,"ブラウザ内に自動保存しました")
+            assert "AFTER-RELOAD" in page.evaluate(READ_DB)
+            print("LEGACY_BACKUP_STALE_A_IDB_B_PASS",flush=True)
+            # Another old tab now writes fallback C *after* the observed
+            # original backup A. Preserve both; never auto-clobber new C.
+            later=json.dumps(project([item("OLD-TAB-NEW-C")]),ensure_ascii=False)
+            page.evaluate("([key,raw])=>localStorage.setItem(key,raw)",[KEY,later])
+            page.reload(wait_until="load")
+            page.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('旧タブで簡易キャッシュが前回確認後に変わりました')""")
+            assert texts(page)==["LEGACY","MIGRATED","IDB-NEWER-B","AFTER-RELOAD"]
+            page.evaluate("window.talkEditor.addItem('text','me','SHOULD-NOT-CLOBBER-C')")
+            page.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""")
+            assert "SHOULD-NOT-CLOBBER-C" not in page.evaluate(READ_DB)
+            assert "OLD-TAB-NEW-C" in page.evaluate("localStorage.getItem('line-style-editor-cache-backup')")
+            print("LEGACY_BACKUP_NEWER_C_CONFLICT_PASS",flush=True)
+            c.close()
+            # Malformed fallback is never parsed while valid current IDB B
+            # exists; show B and retain raw malformed bytes unmodified.
+            c,page=open_page(browser,url)
+            page.evaluate("window.talkEditor.addItem('text','me','VALID-IDB-B')")
+            saved(page,"ブラウザ内に自動保存しました")
+            page.evaluate("localStorage.setItem('line-style-editor-cache-backup','{broken legacy json')")
+            page.reload(wait_until="load")
+            page.wait_for_function("window.talkEditor?.getProject().items.length===1")
+            assert texts(page)==["VALID-IDB-B"]
+            assert page.evaluate("localStorage.getItem('line-style-editor-cache-backup')")=="{broken legacy json"
+            print("MALFORMED_BACKUP_VALID_IDB_PASS",flush=True)
             c.close()
             # Large document must use IndexedDB instead of the <=1.6m backup cap.
             c,page=open_page(browser,url)
