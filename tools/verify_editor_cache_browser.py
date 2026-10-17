@@ -286,6 +286,56 @@ def main():
             assert dirty.evaluate("localStorage.getItem('line-style-editor-cache-backup')") is None
             print("IDB_WRITE_FAIL_NO_FALSE_FALLBACK_PASS",flush=True)
             c.close()
+            # Successor #47: a stale backup must not hide newer IDB work.
+            c,history=open_page(browser,url)
+            backup_a=json.dumps(project([item("OLD-BACKUP-A")]),ensure_ascii=False)
+            history.evaluate("([key,value])=>localStorage.setItem(key,value)",[KEY,backup_a])
+            history.reload(wait_until="load")
+            history.wait_for_function("window.talkEditor.getProject().items.length===1")
+            assert texts(history)==["OLD-BACKUP-A"]
+            history.evaluate("window.talkEditor.addItem('text','me','NEW-IDB-B')")
+            saved(history,"ブラウザ内に自動保存しました")
+            assert "NEW-IDB-B" in history.evaluate(READ_DB)
+            assert "NEW-IDB-B" not in history.evaluate("localStorage.getItem('line-style-editor-cache-backup')")
+            history.reload(wait_until="load")
+            history.wait_for_function("window.talkEditor.getProject().items.length===2")
+            assert texts(history)==["OLD-BACKUP-A","NEW-IDB-B"], "stale fallback must not replace accepted newer IDB"
+            assert not history.locator("#editorErrorToast").is_visible(), "stale fallback must not block valid IDB auto-saves"
+            history.evaluate("window.talkEditor.addItem('text','me','IDB-WRITE-C')")
+            saved(history,"ブラウザ内に自動保存しました")
+            assert "IDB-WRITE-C" in history.evaluate(READ_DB)
+            print("STALE_LEGACY_BACKUP_NO_FALSE_CONFLICT_PASS",flush=True)
+
+            # True post-commit old-tab fallback still preserves both copies and forbids overwrite.
+            later=json.dumps(project([item("LEGACY-AFTER-COMMIT")]),ensure_ascii=False)
+            history.evaluate("([key,value])=>localStorage.setItem(key,value)",[KEY,later])
+            history.reload(wait_until="load")
+            history.wait_for_function("""() =>
+              document.querySelector('#editorErrorToast')?.textContent?.includes('異なる保存内容')""",timeout=20000)
+            assert texts(history)==["LEGACY-AFTER-COMMIT"]
+            assert history.locator("#editorErrorToast button").count()==2, "both recoverable copies need export controls"
+            assert "IDB-WRITE-C" in history.evaluate(READ_DB)
+            history.evaluate("window.talkEditor.addItem('text','me','MUST-NOT-WRITE')")
+            history.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",timeout=20000)
+            assert "MUST-NOT-WRITE" not in history.evaluate(READ_DB)
+            assert history.evaluate("localStorage.getItem('line-style-editor-cache-backup')")==later
+            print("POST_COMMIT_LEGACY_BACKUP_CONFLICT_PASS",flush=True)
+            c.close()
+
+            # Invalid backup must not suppress a separately valid IDB document.
+            c,invalid=open_page(browser,url)
+            invalid.evaluate("window.talkEditor.addItem('text','me','VALID-IDB')")
+            saved(invalid,"ブラウザ内に自動保存しました")
+            invalid.evaluate("([key,value])=>localStorage.setItem(key,value)",[KEY,"malformed{not-json"])
+            invalid.reload(wait_until="load")
+            invalid.wait_for_function("""() =>
+              document.querySelector('#editorErrorToast')?.textContent?.includes('異なる保存内容')""",timeout=20000)
+            assert texts(invalid)==["VALID-IDB"], "invalid fallback must not blank valid IDB project"
+            assert "VALID-IDB" in invalid.evaluate(READ_DB)
+            assert invalid.locator("#editorErrorToast button").count()==2
+            print("MALFORMED_BACKUP_KEEP_VALID_IDB_PASS",flush=True)
+            c.close()
             # Integrated #62 warning-only behavior must remain coherent with
             # the revision CAS, startup restore and fail-closed save guards.
             c,warning=open_page(browser,url)
