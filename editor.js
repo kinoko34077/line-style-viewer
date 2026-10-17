@@ -99,6 +99,12 @@ function database(){return new Promise((resolve,reject)=>{if(!indexedDB){reject(
 // Sibling record preserves the original document/active JSON string contract.
 // Transactions atomically compare the revision observed when this tab restored.
 let baseCacheRevision=null,baseCacheRaw,restoreMismatch=false,restorePromise=Promise.resolve();
+function backupObservation(readable,value){
+ return {readable,value:readable?value:null};
+}
+function sameBackupObservation(a,b){
+ return !!a&&!!b&&a.readable===b.readable&&a.value===b.value;
+}
 async function saveCache(serialized){
  // Never write a new blank-state edit over a saved document whose asynchronous
  // startup restore has not yet finished. Waiting is local, not a network lock.
@@ -132,17 +138,30 @@ async function saveCache(serialized){
    reject(error);
   };
  });}
-async function readCache(){
+async function readCache(currentBackupObservation){
  const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+  const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
   const raw=store.get('active'),revision=store.get('active-revision');
   const protectedCopy=store.get('active-protected');
+  const legacyObservation=store.get('legacy-backup-observed');
+  let observedBackup,observationCreated=false;
+  legacyObservation.onsuccess=()=>{
+   if(legacyObservation.result===undefined){
+    // Keep the exact last-observed fallback as a recoverable copy in IDB.
+    // This also establishes ordering evidence for legacy tabs that write later.
+    observedBackup=currentBackupObservation;
+    observationCreated=true;
+    store.put(observedBackup,'legacy-backup-observed');
+   }else observedBackup=legacyObservation.result;
+  };
   tx.oncomplete=()=>{db.close();resolve({raw:raw.result,
    value:protectedCopy.result??raw.result,protected:protectedCopy.result,
-   revision:revision.result??null});};
+   revision:revision.result??null,legacyBackupObserved:observedBackup,
+   legacyBackupObservationCreated:observationCreated});};
   tx.onabort=()=>{db.close();reject(tx.error||Error('IndexedDB読込失敗'));};
- });}
+ });
+}
 // Serialize cache writes, so a delayed earlier IndexedDB transaction
 // cannot finish after and replace a newer edited document.
 let saveQueue=Promise.resolve();
@@ -182,10 +201,12 @@ function schedule(){
 async function restore(){
  const version=dbCounter;
  try{
-  let s,legacyOverwrite=false,backupConflict=false,legacyBackup;
-  try{legacyBackup=localStorage.getItem('line-style-editor-cache-backup');}catch{}
+  let s,legacyOverwrite=false,backupConflict=false,unverifiedBackupConflict=false;
+  let legacyBackup,legacyStorageReadable=false;
+  try{legacyBackup=localStorage.getItem('line-style-editor-cache-backup');legacyStorageReadable=true;}catch{}
+  const currentBackupObservation=backupObservation(legacyStorageReadable,legacyBackup);
   try{
-   const saved=await readCache();
+   const saved=await readCache(currentBackupObservation);
    s=saved.value;
    if(!touched&&version===dbCounter){baseCacheRevision=saved.revision;baseCacheRaw=saved.raw;}
    // An already-open pre-CAS tab can replace raw active. Keep the newer
@@ -193,21 +214,29 @@ async function restore(){
    if(saved.protected!==undefined&&saved.protected!==saved.raw){
     restoreMismatch=true;legacyOverwrite=true;
    }
-   // Older tabs may fall back to localStorage when an IndexedDB write fails.
-   // If that backup differs from every accepted IDB copy, preserve the
-   // conflict and display the fallback for export without writing either copy.
-   if(s!==undefined&&legacyBackup!==null&&legacyBackup!==undefined&&
-      legacyBackup!==s&&legacyBackup!==saved.raw&&legacyBackup!==saved.protected){
-    restoreMismatch=true;backupConflict=true;
-    if(!touched&&version===dbCounter)s=legacyBackup;
+   // Inequality alone cannot order an old backup against current IDB data.
+   // A first divergent observation is preserved and reported as ambiguous.
+   // Later changes from that baseline are treated as a real legacy-tab conflict.
+   const hasBackup=currentBackupObservation.readable&&currentBackupObservation.value!==null;
+   const hasCache=s!==undefined&&s!==null&&s!=='';
+   const differsFromIdb=hasBackup&&hasCache&&
+    currentBackupObservation.value!==s&&currentBackupObservation.value!==saved.raw&&
+    currentBackupObservation.value!==saved.protected;
+   if(differsFromIdb){
+    if(saved.legacyBackupObservationCreated){
+     backupConflict=true;unverifiedBackupConflict=true;
+    }else if(!sameBackupObservation(currentBackupObservation,saved.legacyBackupObserved)){
+     restoreMismatch=true;backupConflict=true;legacyOverwrite=true;
+    }
    }
   }catch{}
   // Earlier releases saved only to localStorage; an empty new IndexedDB must
   // not hide the owner's existing draft when this storage path is repaired.
-  if(!s)s=legacyBackup??localStorage.getItem('line-style-editor-cache-backup');
+  if((s===undefined||s===null||s==='')&&legacyStorageReadable)s=legacyBackup;
   if(s&&(touched||version!==dbCounter))restoreMismatch=true;
   if(s&&!touched&&version===dbCounter){doc=sanitize(JSON.parse(s));status('前回のトークを復元しました');}
-  if(backupConflict)status('IndexedDBと簡易キャッシュに異なる保存内容があります。自動上書きを停止しました。表示中の内容をJSONに保存し、簡易キャッシュも保全してください',true);
+  if(unverifiedBackupConflict)status('IndexedDBと旧簡易キャッシュの内容が異なります。新旧の順序は判別できないため、IndexedDBを表示し、両方のコピーを保持しました。必要に応じて表示中の内容をJSONに書き出してください',true);
+  else if(backupConflict)status('旧タブで簡易キャッシュが前回確認後に変わりました。IndexedDBを表示し、両方のコピーを保持して自動保存を停止しました。表示中の内容をJSONに書き出してください',true);
   else if(legacyOverwrite)status('旧タブで保存内容が変更されました。上書きせずJSONに保存してください',true);
  }catch{status('保存データを復元できませんでした',true);}
  loaded=true;render();
