@@ -522,10 +522,15 @@ function renderChat({ meta, items }) {
         previousVisual.name === item.name && previousVisual.minute === minute);
       let contentHTML = '';
 
-      if (/^\[.*\.(jpg|png|svg|mp4|webm)\]$/.test(item.content)) {
-        const filename = item.content.replace(/[\[\]]/g, '');
+      // Only trusted relative asset names may become browser src attributes.
+      // A [https://host/file.png] marker must never trigger a network request.
+      const sourceName=/^\[([^\]\n]+\.(?:jpg|jpeg|png|svg|mp4|webm))\]$/i.exec(item.content)?.[1];
+      const localName=sourceName&&!sourceName.startsWith('/')&&
+        sourceName.split('/').every(part=>part&&part!=='.'&&part!=='..'&&!/[\\:?&#%]/.test(part));
+      if (localName) {
+        const filename = sourceName;
         const safeFilename = escapeHtml(filename);
-        if (/\.(jpg|png|svg)$/.test(filename)) {
+        if (/\.(jpe?g|png|svg)$/i.test(filename)) {
           contentHTML = `<img src="${safeFilename}" onerror="this.src='./default/default-photo.png'">`;
         } else if (/\.(mp4|webm)$/.test(filename)) {
           contentHTML = `<video src="${safeFilename}" controls></video>`;
