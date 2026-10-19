@@ -208,33 +208,59 @@ async function resumeAutosave(){
   }else{schedule();status('競合データを退避しました。追加編集の保存を再試行します');}
  }catch{status('保存の復旧に失敗しました。競合データをJSONへ保存し、ブラウザの空き容量を確認してください',true);}
 }
+// Provenance metadata is a best-effort write, not part of a cache *read*.
+// Validate again in a separate transaction: another tab must never have its
+// new document or observation silently replaced by a stale reader.
+async function noteBackupObservationIfUnchanged(readSnapshot,currentBackupObservation){
+ try{
+  const db=await database();
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
+   const raw=store.get('active'),protectedCopy=store.get('active-protected'),
+     revision=store.get('active-revision'),prior=store.get('legacy-backup-observed');
+   prior.onsuccess=()=>{
+    const samePrior=prior.result===readSnapshot.previousLegacyObservation||
+      sameBackupObservation(prior.result,readSnapshot.previousLegacyObservation);
+    if(!samePrior||raw.result!==readSnapshot.raw||
+       protectedCopy.result!==readSnapshot.protected||
+       (revision.result??null)!==readSnapshot.revision){
+     tx.abort();return;
+    }
+    store.put(currentBackupObservation,'legacy-backup-observed');
+   };
+   tx.oncomplete=()=>{db.close();resolve();};
+   tx.onabort=()=>{db.close();reject(tx.error||Error('provenance concurrently changed'));};
+  });
+ }catch(error){
+  // A failed metadata update must not make a successful data read fail;
+  // the next read may safely retry if the provenance is still missing.
+  console.warn('legacy backup observation deferred',error);
+ }
+}
 async function readCache(currentBackupObservation){
  const db=await database();
- return new Promise((resolve,reject)=>{
-  const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
-  const raw=store.get('active'),revision=store.get('active-revision');
-  const protectedCopy=store.get('active-protected');
-  const legacyObservation=store.get('legacy-backup-observed');
-  let observedBackup,observationCreated=false;
-  legacyObservation.onsuccess=()=>{
-   // An earlier empty-tab startup can have registered a null backup
-   // *before* an old localStorage document A is imported. Until IDB has
-   // any document, observe A as the migration baseline. Once active or
-   // protected exists, never rewrite this provenance automatically.
+ const saved=await new Promise((resolve,reject)=>{
+  const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+  const raw=store.get('active'),revision=store.get('active-revision'),
+    protectedCopy=store.get('active-protected'),
+    legacyObservation=store.get('legacy-backup-observed');
+  tx.oncomplete=()=>{
    const emptyIdb=raw.result==null&&protectedCopy.result==null;
-   if(legacyObservation.result===undefined || (
-      emptyIdb&&!sameBackupObservation(legacyObservation.result,currentBackupObservation))){
-    observedBackup=currentBackupObservation;
-    observationCreated=true;
-    store.put(observedBackup,'legacy-backup-observed');
-   }else observedBackup=legacyObservation.result;
+   const observe=legacyObservation.result===undefined||
+     (emptyIdb&&!sameBackupObservation(legacyObservation.result,currentBackupObservation));
+   db.close();
+   resolve({raw:raw.result,value:protectedCopy.result??raw.result,
+    protected:protectedCopy.result,revision:revision.result??null,
+    previousLegacyObservation:legacyObservation.result,
+    legacyBackupObserved:observe?currentBackupObservation:legacyObservation.result,
+    legacyBackupObservationCreated:observe});
   };
-  tx.oncomplete=()=>{db.close();resolve({raw:raw.result,
-   value:protectedCopy.result??raw.result,protected:protectedCopy.result,
-   revision:revision.result??null,legacyBackupObserved:observedBackup,
-   legacyBackupObservationCreated:observationCreated});};
   tx.onabort=()=>{db.close();reject(tx.error||Error('IndexedDB読込失敗'));};
  });
+ if(saved.legacyBackupObservationCreated){
+  await noteBackupObservationIfUnchanged(saved,currentBackupObservation);
+ }
+ return saved;
 }
 // Serialize cache writes, so a delayed earlier IndexedDB transaction
 // cannot finish after and replace a newer edited document.
