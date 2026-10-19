@@ -232,12 +232,15 @@ def main():
                 q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
               });
               try{
-                const raw=await new Promise((ok,fail)=>{
-                  const tx=db.transaction('document','readonly');
-                  const r=tx.objectStore('document').get('active');
-                  r.onsuccess=()=>ok(r.result);r.onerror=()=>fail(r.error);
+                const copies=await new Promise((ok,fail)=>{
+                  const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+                  const active=store.get('active'),protectedCopy=store.get('active-protected');
+                  tx.oncomplete=()=>ok([active.result,protectedCopy.result]);
+                  tx.onabort=()=>fail(tx.error);
                 });
-                return JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me';
+                // Restore prioritizes the protected copy; both atomic copies
+                // must actually contain the last touch-side edit.
+                return copies.every(raw=>JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me');
               }finally{db.close();}
             }""",arg=peerId,timeout=20000)
             count=len(project(page)["items"])
