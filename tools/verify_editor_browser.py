@@ -256,6 +256,11 @@ def main():
               }finally{db.close();}
             }""",arg=peerId,timeout=20000)
             count=len(project(page)["items"])
+            print("LINE_PRE_RELOAD_ORIGIN "+json.dumps(page.evaluate("""async () => ({
+              href:location.href,origin:location.origin,
+              databaseNames:(await indexedDB.databases()).map(d=>d.name),
+              hasLocalBackup:!!localStorage.getItem('line-style-editor-cache-backup')
+            })"""),ensure_ascii=False),flush=True)
             page.reload()
             # A matching title is not evidence that asynchronous IDB restore
             # completed; wait for the exact persisted row/side after reload.
@@ -285,8 +290,11 @@ def main():
                             tx.onabort=()=>fail(tx.error);
                           });
                           const parsed=raw=>{try{return JSON.parse(raw??'{}')}catch{return null}};
-                          return {title:doc?.title,liveSide:side(doc),activeSide:side(parsed(copies[0])),
+                          return {href:location.href,origin:location.origin,
+                            databases:(await indexedDB.databases()).map(d=>d.name),
+                            title:doc?.title,liveSide:side(doc),activeSide:side(parsed(copies[0])),
                             protectedSide:side(parsed(copies[1])),hasRevision:!!copies[2],
+                            hasLocalBackup:!!localStorage.getItem('line-style-editor-cache-backup'),
                             itemCount:doc?.items?.length,storageStatus:document.querySelector('#sourceStatus')?.textContent?.slice(0,150)};
                         }finally{db.close();}
                     }""",peerId)
