@@ -241,7 +241,15 @@ def main():
               }finally{db.close();}
             }""",arg=peerId,timeout=20000)
             count=len(project(page)["items"])
-            page.reload();page.wait_for_function("!!window.talkEditor && window.talkEditor.getProject().title==='制作中のトーク'",timeout=15000)
+            page.reload()
+            # A matching title is not evidence that asynchronous IDB restore
+            # completed; wait for the exact persisted row/side after reload.
+            page.wait_for_function("""({id, title}) => {
+                const editor=window.talkEditor;
+                if(!editor)return false;
+                const doc=editor.getProject();
+                return doc.title===title && doc.items.some(i=>i.id===id && i.side==='me');
+            }""",arg={"id":peerId,"title":"制作中のトーク"},timeout=20000)
             assert len(project(page)["items"])==count
             assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="me"
             page.click("#menuToggle");page.click('[data-toggle-section="editorSettings"]')
