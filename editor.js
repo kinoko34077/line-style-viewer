@@ -13,6 +13,10 @@ let lastTap={id:null,at:0};
 // Keep repeated edits to large inline photos from multiplying memory without bound.
 function trimStack(stack){while(stack.length>1 && (stack.length>40 || stack.reduce((n,s)=>n+s.length,0)>32*1024*1024))stack.shift();}
 const snapshot=()=>JSON.stringify(doc);
+// Degrade safely in embedded editor-only test harnesses or when the optional
+// TXT parser has not loaded; normal app pages use script.js's classifier.
+const classifyEditorEntry=typeof classifyEntry==='function' ? classifyEntry :
+ (value,type)=>({entryKind:type==='attachment'?'media':'text',callKind:''});
 const allowedMedia=/^data:(?:image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|application\/octet-stream|audio\/(?:mpeg|ogg|wav));base64,/;
 function sanitize(input){
  if(!input || input.version!==1 || !Array.isArray(input.items)||!Array.isArray(input.participants))throw Error('プロジェクト形式が不正です');
@@ -36,7 +40,7 @@ function sanitize(input){
    seenIds.add(id);
    const type=['text','attachment','date','system','call'].includes(it.type)?it.type:'text';
    const content=String(it.content||'').slice(0,200000);
-   const semantic=classifyEntry(content,type);
+   const semantic=classifyEditorEntry(content,type);
    const media=it.media&&allowedMedia.test(it.media.data||'')?{data:it.media.data,mime:String(it.media.mime||''),name:String(it.media.name||'ファイル').slice(0,180)}:null;
    const item={id,
     type,side:['me','you','system'].includes(it.side)?it.side:'you',
@@ -50,7 +54,7 @@ function sanitize(input){
 }
 function refreshEntrySemantics(it){
  if(it.type==='date')return;
- const semantic=classifyEntry(it.content,it.media?.data?'attachment':it.type);
+ const semantic=classifyEditorEntry(it.content,it.media?.data?'attachment':it.type);
  it.entryKind=semantic.entryKind;it.callKind=semantic.callKind;
  if(semantic.entryKind==='call')it.type='call';
  else if(semantic.entryKind==='media')it.type='attachment';
