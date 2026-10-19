@@ -203,7 +203,41 @@ def main():
             assert stale.evaluate("localStorage.getItem('line-style-editor-cache-backup')") is None, (
                 "stale-tab conflict must not silently overwrite legacy backup"
             )
-            print("CROSS_TAB_REVISION_CONFLICT_PASS",flush=True)
+            # A new-version CAS conflict must offer the same explicit
+            # no-silent-overwrite recovery as a pre-CAS legacy mismatch.
+            assert stale.get_by_role("button",name="競合データを保存").is_visible()
+            assert stale.get_by_role("button",name="自動保存を復旧").is_visible()
+            with stale.expect_download(timeout=20000) as cas_download:
+                stale.get_by_role("button",name="競合データを保存").click()
+            assert cas_download.value.suggested_filename=="line-chat-conflict-backup.json"
+            stale.once("dialog",lambda dialog:dialog.accept())
+            stale.get_by_role("button",name="自動保存を復旧").click()
+            stale.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('自動保存を再開しました')""",
+              timeout=20000)
+            assert "STALE-TAB-UNSAVED" in stale.evaluate(READ_DB)
+            archived_cas=stale.evaluate("""async () => {
+              const db=await new Promise((ok,fail)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
+              });
+              try{return await new Promise((ok,fail)=>{
+                const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+                const keys=store.getAllKeys();
+                keys.onsuccess=()=>{
+                  const k=keys.result.find(x=>String(x).startsWith('conflict-archive-'));
+                  if(!k){fail(Error('missing CAS recovery archive'));return;}
+                  const v=store.get(k);
+                  v.onsuccess=()=>ok(v.result);v.onerror=()=>fail(v.error);
+                };keys.onerror=()=>fail(keys.error);
+              });}finally{db.close();}
+            }""")
+            assert "PRIMARY-TAB-WINS" in archived_cas["raw"]
+            assert "PRIMARY-TAB-WINS" in archived_cas["protected"]
+            stale.evaluate("window.talkEditor.addItem('text','me','AFTER-CAS-RECOVERY')")
+            saved(stale,"ブラウザ内に自動保存しました")
+            assert "AFTER-CAS-RECOVERY" in stale.evaluate(READ_DB)
+            print("CROSS_TAB_CAS_EXPLICIT_RECOVERY_PASS",flush=True)
             c.close()
             # A delayed initial read must not grant a fresh blank editor
             # authority to overwrite a previously saved nonempty document.
