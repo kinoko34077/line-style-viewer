@@ -109,6 +109,19 @@ def main():
                 assert entry["entryKind"]=="call" and entry["side"]=="system",entry
                 page.evaluate("p=>window.talkEditor.replaceProject(p)",final)
                 assert next(x for x in page.evaluate("window.talkEditor.getProject().items") if x["id"]==ids[0])["entryKind"]=="call"
+                # Older saved JSON lacks the new semantic attribute: migrate by raw
+                # bracket content, not by a guessed speaker or type.
+                old=json.loads(json.dumps(final))
+                for it in old["items"]:
+                    it.pop("entryKind",None)
+                    it.pop("callKind",None)
+                    if it["content"].startswith("["):
+                        it["type"]="text"
+                page.evaluate("p=>window.talkEditor.replaceProject(p)",old)
+                restored=page.evaluate("window.talkEditor.getProject().items")
+                assert [x["entryKind"] for x in restored]==[
+                    "call","call","media","media","annotation","text"],restored
+                assert next(x for x in restored if x["id"]==ids[0])["side"]=="system"
                 assert not errors,errors
                 print("BRACKET_CARD_EDITOR_CHROMIUM_PASS",json.dumps({"width":width,"entries":len(final["items"])},ensure_ascii=False),flush=True)
                 context.close()
