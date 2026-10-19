@@ -257,7 +257,12 @@ function schedule(){
    // Competing tabs must not silently overwrite the legacy fallback either.
    // Keep this tab's unsaved document available for explicit JSON export.
    if(error?.code==='CACHE_CONFLICT'){
-    status('別タブでトークが更新されました。このタブの内容は右上の保存でJSON書き出ししてください',true);
+    // A newer CAS-capable tab can win after this tab restored. This is a
+    // real unresolved conflict, just like a legacy-tab raw/protected mismatch:
+    // do not silently retry against the new revision or require a reload that
+    // could discard unsaved edits. Offer explicit export and archived recovery.
+    restoreMismatch=true;
+    status('別タブでトークが更新されました。競合データをJSONに退避し、確認してから自動保存を復旧してください',true);
     return;
    }
    // Existing nonempty IndexedDB state takes precedence on future restore.
