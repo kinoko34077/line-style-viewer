@@ -212,8 +212,9 @@ async function resumeAutosave(){
 // Validate again in a separate transaction: another tab must never have its
 // new document or observation silently replaced by a stale reader.
 async function noteBackupObservationIfUnchanged(readSnapshot,currentBackupObservation){
+ let db;
  try{
-  const db=await database();
+  db=await database();
   await new Promise((resolve,reject)=>{
    const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
    const raw=store.get('active'),protectedCopy=store.get('active-protected'),
@@ -232,6 +233,7 @@ async function noteBackupObservationIfUnchanged(readSnapshot,currentBackupObserv
    tx.onabort=()=>{db.close();reject(tx.error||Error('provenance concurrently changed'));};
   });
  }catch(error){
+  try{db?.close();}catch{}
   // A failed metadata update must not make a successful data read fail;
   // the next read may safely retry if the provenance is still missing.
   console.warn('legacy backup observation deferred',error);
