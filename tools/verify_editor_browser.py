@@ -235,7 +235,8 @@ def main():
             returned=next(i for i in project(page)["items"] if i["id"]==peerId)
             assert returned["side"]=="you" and returned["speaker"]=="登場人物",returned
             touch_move("me")
-            assert next(i for i in project(page)["items"] if i["id"]==peerId)["speaker"]=="制作主"
+            final_touch=next(i for i in project(page)["items"] if i["id"]==peerId)
+            assert final_touch["side"]=="me" and final_touch["speaker"]=="制作主",final_touch
             # A status string can describe an older save. Wait for the actual
             # latest peer side in IndexedDB before reloading the tab.
             page.wait_for_function("""async id => {
