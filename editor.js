@@ -201,7 +201,18 @@ function specialView(it){
   const copy=duration?'<strong>'+(duration[1]==='ビデオ'?'ビデオ通話':'音声通話')+'</strong><small>'+esc(duration[2])+'</small>':'<strong>'+esc(label)+'</strong>';
   return '<div class="editor-call-card" role="group" aria-label="'+text+'"><span class="editor-call-symbol" aria-hidden="true">☎</span><span class="editor-call-label">'+copy+'</span></div>';
  }
- if(it.entryKind==='media')return '<div class="editor-token-card"><span aria-hidden="true">▧</span><span>'+text+'</span></div>';
+ if(it.entryKind==='media'){
+  const kind=mediaKind(it),id=esc(it.id),file=it.media;
+  let preview='';
+  if(file?.data){
+   const url=esc(file.data),name=esc(file.name);
+   if(kind==='image'||kind==='stamp')preview='<img class="editor-center-media" src="'+url+'" alt="'+name+'">';
+   else if(kind==='video')preview='<video class="editor-center-media" src="'+url+'" controls playsinline></video>';
+   else preview='<a href="'+url+'" download="'+name+'">▤ '+name+'</a>';
+  }else preview='<span aria-hidden="true">▧</span>';
+  return '<div class="editor-token-card">'+preview+'<span class="entry-token-caption" title="ダブルタップで括弧を編集">'+text+'</span>'+
+    '<button type="button" class="editor-token-picker" data-pick-media="'+id+'">素材を変更</button></div>';
+ }
  return '<span class="editor-annotation-chip" role="note">'+text+'</span>';
 }
 function render(options={}){
