@@ -515,7 +515,8 @@ function renderChat({ meta, items }) {
       const icon = meta.icons[item.name] || meta.icons['default'] || './default/default-icon.png';
       const safeIcon = escapeHtml(icon);
       const safeTime = escapeHtml(item.time);
-      const ordinary = item.type === 'text' || item.type === 'attachment';
+      const ordinary = (item.type === 'text' || item.type === 'attachment') &&
+        item.entryKind !== 'annotation';
       const minute = minuteKey(item.time);
       const grouped = Boolean(ordinary && item.name && minute && previousVisual &&
         previousVisual.name === item.name && previousVisual.minute === minute);
@@ -539,6 +540,9 @@ function renderChat({ meta, items }) {
         contentHTML = '<div class="file-card" role="group" aria-label="ファイル（詳細不明）"><span class="file-card-icon" aria-hidden="true">▤</span><span class="file-card-label">ファイル</span></div>';
       } else if (item.content === '[スタンプ]') {
         contentHTML = '<img class="stamp-fallback" src="./default/default-stamp.png" alt="スタンプ（画像データなし）">';
+      } else if (item.entryKind === 'annotation') {
+        // Complete [...] markers are event/annotation records, not chat prose.
+        contentHTML = `<div class="bracket-notice" role="note">${escapeHtml(item.content)}</div>`;
       } else if (item.type === 'call') {
         const callText = item.content.replace(/^☎\s*/, '').replace(/^\[|\]$/g, '');
         const durationMatch = /^(?:(音声|ビデオ))?通話時間\s*([0-9:]+)$/.exec(callText.trim());
