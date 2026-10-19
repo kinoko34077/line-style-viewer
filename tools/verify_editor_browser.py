@@ -224,7 +224,22 @@ def main():
             assert returned["side"]=="you" and returned["speaker"]=="登場人物",returned
             touch_move("me")
             assert next(i for i in project(page)["items"] if i["id"]==peerId)["speaker"]=="制作主"
-            page.wait_for_function("document.querySelector('#sourceStatus').textContent.includes('自動保存')",timeout=15000)
+            # A status string can describe an older save. Wait for the actual
+            # latest peer side in IndexedDB before reloading the tab.
+            page.wait_for_function("""async id => {
+              const db=await new Promise((ok,fail)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
+              });
+              try{
+                const raw=await new Promise((ok,fail)=>{
+                  const tx=db.transaction('document','readonly');
+                  const r=tx.objectStore('document').get('active');
+                  r.onsuccess=()=>ok(r.result);r.onerror=()=>fail(r.error);
+                });
+                return JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me';
+              }finally{db.close();}
+            }""",arg=peerId,timeout=20000)
             count=len(project(page)["items"])
             page.reload();page.wait_for_function("!!window.talkEditor && window.talkEditor.getProject().title==='制作中のトーク'",timeout=15000)
             assert len(project(page)["items"])==count
