@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 """Proof of offline LINE chat creation, editing, media, drag and browser cache."""
-import base64,json
+import base64,json,threading,atexit
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 OUT=Path("visual-editor-result");OUT.mkdir(exist_ok=True)
 PNG=base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==")
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, *_args): pass
+
 def project(page):
     return page.evaluate("window.talkEditor.getProject()")
 def main():
+    # A file:// document can get an opaque/ephemeral Chromium origin on reload.
+    # Serve the real app on a stable localhost origin as the persistence test does.
+    server=ThreadingHTTPServer(("127.0.0.1",0),partial(QuietHandler,directory=str(ROOT)))
+    threading.Thread(target=server.serve_forever,daemon=True).start()
+    atexit.register(server.server_close)
+    atexit.register(server.shutdown)
+    url=f"http://127.0.0.1:{server.server_port}/index.html"
     with sync_playwright() as p:
         browser=p.chromium.launch(args=["--no-sandbox","--disable-dev-shm-usage"])
         for width in [320,390,768]:
@@ -16,7 +28,7 @@ def main():
             page=context.new_page()
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)))
-            page.goto((ROOT/"index.html").as_uri(),wait_until="load")
+            page.goto(url,wait_until="load")
             page.wait_for_function("!!window.talkEditor")
             assert project(page)["items"]==[],("not initially blank",project(page))
             assert page.locator("#conversationTitle").inner_text()=="トーク"
@@ -223,10 +235,107 @@ def main():
             returned=next(i for i in project(page)["items"] if i["id"]==peerId)
             assert returned["side"]=="you" and returned["speaker"]=="登場人物",returned
             touch_move("me")
-            assert next(i for i in project(page)["items"] if i["id"]==peerId)["speaker"]=="制作主"
-            page.wait_for_function("document.querySelector('#sourceStatus').textContent.includes('自動保存')",timeout=15000)
+            final_touch=next(i for i in project(page)["items"] if i["id"]==peerId)
+            assert final_touch["side"]=="me" and final_touch["speaker"]=="制作主",final_touch
+            # A status string can describe an older save. Wait for the actual
+            # latest peer side in IndexedDB before reloading the tab.
+            page.wait_for_function("""async id => {
+              const db=await new Promise((ok,fail)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
+              });
+              try{
+                const copies=await new Promise((ok,fail)=>{
+                  const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+                  const active=store.get('active'),protectedCopy=store.get('active-protected');
+                  tx.oncomplete=()=>ok([active.result,protectedCopy.result]);
+                  tx.onabort=()=>fail(tx.error);
+                });
+                // A previous intermediate drag also had side=me; observing
+                // that older persisted state is NOT proof the latest edit saved.
+                // The byte-for-byte current project must reach both CAS copies.
+                const expected=JSON.stringify(window.talkEditor.getProject());
+                return copies.every(raw=>raw===expected &&
+                  JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me');
+              }finally{db.close();}
+            }""",arg=peerId,timeout=20000)
             count=len(project(page)["items"])
-            page.reload();page.wait_for_function("!!window.talkEditor && window.talkEditor.getProject().title==='制作中のトーク'",timeout=15000)
+            # An independent test-owned marker identifies whole-origin storage
+            # loss separately from the application's document-store behavior.
+            page.evaluate("""async () => {
+              localStorage.setItem('__line_ci_reload_marker','kept');
+              const db=await new Promise((ok,fail)=>{
+                const req=indexedDB.open('__line_ci_reload_marker',1);
+                req.onupgradeneeded=()=>req.result.createObjectStore('marker');
+                req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+              });
+              try {
+                await new Promise((ok,fail)=>{
+                  const tx=db.transaction('marker','readwrite');
+                  tx.objectStore('marker').put('kept','value');
+                  tx.oncomplete=()=>ok();tx.onabort=()=>fail(tx.error);
+                });
+              }finally{db.close();}
+            }""")
+            print("LINE_PRE_RELOAD_ORIGIN "+json.dumps(page.evaluate("""async () => ({
+              href:location.href,origin:location.origin,
+              databaseNames:(await indexedDB.databases()).map(d=>d.name),
+              hasLocalBackup:!!localStorage.getItem('line-style-editor-cache-backup')
+            })"""),ensure_ascii=False),flush=True)
+            page.reload()
+            # A matching title is not evidence that asynchronous IDB restore
+            # completed; wait for the exact persisted row/side after reload.
+            try:
+                page.wait_for_function("""({id, title}) => {
+                    const editor=window.talkEditor;
+                    if(!editor)return false;
+                    const doc=editor.getProject();
+                    return doc.title===title && doc.items.some(i=>i.id===id && i.side==='me');
+                }""",arg={"id":peerId,"title":"制作中のトーク"},timeout=20000)
+            except Exception:
+                # Diagnostics only, on synthetic CI fixtures, with no chat contents.
+                # A timeout here is a genuine unresolved restore requirement.
+                try:
+                    diagnostics=page.evaluate("""async id => {
+                        const doc=window.talkEditor?.getProject?.();
+                        const side=obj=>obj?.items?.find(i=>i.id===id)?.side??null;
+                        const db=await new Promise((ok,fail)=>{
+                          const req=indexedDB.open('line-style-editor-cache',1);
+                          req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                        });
+                        try{
+                          const copies=await new Promise((ok,fail)=>{
+                            const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+                            const a=store.get('active'),p=store.get('active-protected'),r=store.get('active-revision');
+                            tx.oncomplete=()=>ok([a.result,p.result,r.result]);
+                            tx.onabort=()=>fail(tx.error);
+                          });
+                          const parsed=raw=>{try{return JSON.parse(raw??'{}')}catch{return null}};
+                          const marker=await new Promise((ok,fail)=>{
+                            const req=indexedDB.open('__line_ci_reload_marker',1);
+                            req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                          });
+                          let markerValue=null;
+                          try{
+                            markerValue=await new Promise((ok,fail)=>{
+                              const tx=marker.transaction('marker','readonly');
+                              const req=tx.objectStore('marker').get('value');
+                              req.onsuccess=()=>ok(req.result??null);req.onerror=()=>fail(req.error);
+                            });
+                          }finally{marker.close();}
+                          return {href:location.href,origin:location.origin,
+                            markerIDB:markerValue,markerLocal:localStorage.getItem('__line_ci_reload_marker'),
+                            databases:(await indexedDB.databases()).map(d=>d.name),
+                            title:doc?.title,liveSide:side(doc),activeSide:side(parsed(copies[0])),
+                            protectedSide:side(parsed(copies[1])),hasRevision:!!copies[2],
+                            hasLocalBackup:!!localStorage.getItem('line-style-editor-cache-backup'),
+                            itemCount:doc?.items?.length,storageStatus:document.querySelector('#sourceStatus')?.textContent?.slice(0,150)};
+                        }finally{db.close();}
+                    }""",peerId)
+                    print("LINE_RESTORE_DIAGNOSTIC "+json.dumps(diagnostics,ensure_ascii=False),flush=True)
+                except Exception as diagnostic_error:
+                    print("LINE_RESTORE_DIAGNOSTIC_UNAVAILABLE "+str(diagnostic_error),flush=True)
+                raise
             assert len(project(page)["items"])==count
             assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="me"
             page.click("#menuToggle");page.click('[data-toggle-section="editorSettings"]')
