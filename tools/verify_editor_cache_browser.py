@@ -164,6 +164,41 @@ def main():
             assert len(large)>1600000,len(large)
             assert len(json.loads(large)["items"])==9
             c.close()
+            # #47 P2: a read-only IDB restore must keep the authoritative
+            # document even when a separate provenance metadata write aborts.
+            c,reader=open_page(browser,url)
+            reader.evaluate("window.talkEditor.addItem('text','me','READONLY-WINNER')")
+            saved(reader,"ブラウザ内に自動保存しました")
+            assert "READONLY-WINNER" in reader.evaluate(READ_DB)
+            reader.evaluate("""async () => {
+              const db=await new Promise((ok,fail)=>{
+                const req=indexedDB.open('line-style-editor-cache',1);
+                req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+              });
+              await new Promise((ok,fail)=>{
+                const tx=db.transaction('document','readwrite');
+                tx.objectStore('document').delete('legacy-backup-observed');
+                tx.oncomplete=ok;tx.onabort=()=>fail(tx.error);
+              });db.close();
+            }""")
+            reader.evaluate("([key,raw])=>localStorage.setItem(key,raw)",[
+                KEY,json.dumps(project([item("STALE-LEGACY")]),ensure_ascii=False)
+            ])
+            reader.add_init_script("""() => {
+              const original=IDBDatabase.prototype.transaction;
+              IDBDatabase.prototype.transaction=function(name,mode,...args){
+                if(mode==='readwrite')throw Error('QuotaExceededError: metadata blocked');
+                return original.call(this,name,mode,...args);
+              };
+            }""")
+            reader.reload(wait_until="load")
+            reader.wait_for_function("!!window.talkEditor?.getProject")
+            assert texts(reader)==["READONLY-WINNER"], (
+                "metadata write rejection must not cause stale backup restore"
+            )
+            assert "READONLY-WINNER" in reader.evaluate(READ_DB)
+            print("READONLY_IDB_METADATA_WRITE_FAIL_RECOVERS_WINNER_PASS",flush=True)
+            c.close()
             # IndexedDB inaccessible: legacy backup remains a truthful fallback.
             c,page=open_page(browser,url)
             page.evaluate("""() => Object.defineProperty(window,'indexedDB',
