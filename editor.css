@@ -550,3 +550,15 @@ html[data-theme="black"] .menu-action { background: #394047; color: #f7f8fa; }
   box-shadow:inset 0 0 0 2px #3582bd;
   white-space:pre-wrap;
 }
+
+/* Read-only TXT preview uses the same bracket-notice distinction. */
+.bracket-notice {
+  display:inline-block;
+  border-radius:14px;
+  border:1px solid #cbd6e4;
+  background:#eef3fa;
+  color:#40536b;
+  padding:7px 12px;
+  font-size:12px;
+  overflow-wrap:anywhere;
+}
