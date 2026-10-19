@@ -256,6 +256,23 @@ def main():
               }finally{db.close();}
             }""",arg=peerId,timeout=20000)
             count=len(project(page)["items"])
+            # An independent test-owned marker identifies whole-origin storage
+            # loss separately from the application's document-store behavior.
+            page.evaluate("""async () => {
+              localStorage.setItem('__line_ci_reload_marker','kept');
+              const db=await new Promise((ok,fail)=>{
+                const req=indexedDB.open('__line_ci_reload_marker',1);
+                req.onupgradeneeded=()=>req.result.createObjectStore('marker');
+                req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+              });
+              try {
+                await new Promise((ok,fail)=>{
+                  const tx=db.transaction('marker','readwrite');
+                  tx.objectStore('marker').put('kept','value');
+                  tx.oncomplete=()=>ok();tx.onabort=()=>fail(tx.error);
+                });
+              }finally{db.close();}
+            }""")
             print("LINE_PRE_RELOAD_ORIGIN "+json.dumps(page.evaluate("""async () => ({
               href:location.href,origin:location.origin,
               databaseNames:(await indexedDB.databases()).map(d=>d.name),
@@ -290,7 +307,20 @@ def main():
                             tx.onabort=()=>fail(tx.error);
                           });
                           const parsed=raw=>{try{return JSON.parse(raw??'{}')}catch{return null}};
+                          const marker=await new Promise((ok,fail)=>{
+                            const req=indexedDB.open('__line_ci_reload_marker',1);
+                            req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                          });
+                          let markerValue=null;
+                          try{
+                            markerValue=await new Promise((ok,fail)=>{
+                              const tx=marker.transaction('marker','readonly');
+                              const req=tx.objectStore('marker').get('value');
+                              req.onsuccess=()=>ok(req.result??null);req.onerror=()=>fail(req.error);
+                            });
+                          }finally{marker.close();}
                           return {href:location.href,origin:location.origin,
+                            markerIDB:markerValue,markerLocal:localStorage.getItem('__line_ci_reload_marker'),
                             databases:(await indexedDB.databases()).map(d=>d.name),
                             title:doc?.title,liveSide:side(doc),activeSide:side(parsed(copies[0])),
                             protectedSide:side(parsed(copies[1])),hasRevision:!!copies[2],
