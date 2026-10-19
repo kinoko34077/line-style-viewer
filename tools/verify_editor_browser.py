@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 """Proof of offline LINE chat creation, editing, media, drag and browser cache."""
-import base64,json
+import base64,json,threading,atexit
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 OUT=Path("visual-editor-result");OUT.mkdir(exist_ok=True)
 PNG=base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==")
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, *_args): pass
+
 def project(page):
     return page.evaluate("window.talkEditor.getProject()")
 def main():
+    # A file:// document can get an opaque/ephemeral Chromium origin on reload.
+    # Serve the real app on a stable localhost origin as the persistence test does.
+    server=ThreadingHTTPServer(("127.0.0.1",0),partial(QuietHandler,directory=str(ROOT)))
+    threading.Thread(target=server.serve_forever,daemon=True).start()
+    atexit.register(server.server_close)
+    atexit.register(server.shutdown)
+    url=f"http://127.0.0.1:{server.server_port}/index.html"
     with sync_playwright() as p:
         browser=p.chromium.launch(args=["--no-sandbox","--disable-dev-shm-usage"])
         for width in [320,390,768]:
@@ -16,7 +28,7 @@ def main():
             page=context.new_page()
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)))
-            page.goto((ROOT/"index.html").as_uri(),wait_until="load")
+            page.goto(url,wait_until="load")
             page.wait_for_function("!!window.talkEditor")
             assert project(page)["items"]==[],("not initially blank",project(page))
             assert page.locator("#conversationTitle").inner_text()=="トーク"
