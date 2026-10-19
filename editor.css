@@ -562,3 +562,7 @@ html[data-theme="black"] .menu-action { background: #394047; color: #f7f8fa; }
   font-size:12px;
   overflow-wrap:anywhere;
 }
+
+.editor-token-card .editor-center-media {display:block; max-width:min(200px,65vw); max-height:240px; object-fit:contain; border-radius:7px;}
+.editor-token-card .editor-token-picker {border:0; background:transparent; text-decoration:underline; padding:3px; color:#436a93; font-size:11px; cursor:pointer;}
+.editor-token-card:has(.editor-center-media) {flex-direction:column; align-items:center;}
