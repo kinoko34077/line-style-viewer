@@ -247,12 +247,41 @@ def main():
             page.reload()
             # A matching title is not evidence that asynchronous IDB restore
             # completed; wait for the exact persisted row/side after reload.
-            page.wait_for_function("""({id, title}) => {
-                const editor=window.talkEditor;
-                if(!editor)return false;
-                const doc=editor.getProject();
-                return doc.title===title && doc.items.some(i=>i.id===id && i.side==='me');
-            }""",arg={"id":peerId,"title":"制作中のトーク"},timeout=20000)
+            try:
+                page.wait_for_function("""({id, title}) => {
+                    const editor=window.talkEditor;
+                    if(!editor)return false;
+                    const doc=editor.getProject();
+                    return doc.title===title && doc.items.some(i=>i.id===id && i.side==='me');
+                }""",arg={"id":peerId,"title":"制作中のトーク"},timeout=20000)
+            except Exception:
+                # Diagnostics only, on synthetic CI fixtures, with no chat contents.
+                # A timeout here is a genuine unresolved restore requirement.
+                try:
+                    diagnostics=page.evaluate("""async id => {
+                        const doc=window.talkEditor?.getProject?.();
+                        const side=obj=>obj?.items?.find(i=>i.id===id)?.side??null;
+                        const db=await new Promise((ok,fail)=>{
+                          const req=indexedDB.open('line-style-editor-cache',1);
+                          req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                        });
+                        try{
+                          const copies=await new Promise((ok,fail)=>{
+                            const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+                            const a=store.get('active'),p=store.get('active-protected'),r=store.get('active-revision');
+                            tx.oncomplete=()=>ok([a.result,p.result,r.result]);
+                            tx.onabort=()=>fail(tx.error);
+                          });
+                          const parsed=raw=>{try{return JSON.parse(raw??'{}')}catch{return null}};
+                          return {title:doc?.title,liveSide:side(doc),activeSide:side(parsed(copies[0])),
+                            protectedSide:side(parsed(copies[1])),hasRevision:!!copies[2],
+                            itemCount:doc?.items?.length,storageStatus:document.querySelector('#sourceStatus')?.textContent?.slice(0,150)};
+                        }finally{db.close();}
+                    }""",peerId)
+                    print("LINE_RESTORE_DIAGNOSTIC "+json.dumps(diagnostics,ensure_ascii=False),flush=True)
+                except Exception as diagnostic_error:
+                    print("LINE_RESTORE_DIAGNOSTIC_UNAVAILABLE "+str(diagnostic_error),flush=True)
+                raise
             assert len(project(page)["items"])==count
             assert next(i for i in project(page)["items"] if i["id"]==peerId)["side"]=="me"
             page.click("#menuToggle");page.click('[data-toggle-section="editorSettings"]')
