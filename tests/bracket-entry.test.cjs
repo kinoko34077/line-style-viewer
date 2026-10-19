@@ -29,8 +29,8 @@ test('square-bracketed missed calls and durations are exact call records',()=>{
   '12:04\tA\t[ビデオ通話時間 00:42]'
  ];
  const items=parse(ctx,rows);
- assert.deepEqual(items.map(x=>x.type),['call','call','call','call','call']);
- assert.deepEqual(items.map(x=>x.callKind),['missed','missed','duration','duration','duration']);
+ assert.deepEqual(normalize(items.map(x=>x.type)),['call','call','call','call','call']);
+ assert.deepEqual(normalize(items.map(x=>x.callKind)),['missed','missed','duration','duration','duration']);
  assert.ok(items.every(x=>x.entryKind==='call'));
  items.forEach((x,i)=>assert.equal(x.content,rows[i].split('\t')[2]));
  ctx.renderChat({items,meta:{user:'A',icons:{},title:'テスト'}});
@@ -47,7 +47,7 @@ test('known media and unknown brackets are distinct from ordinary text',()=>{
  '12:07\tA\t<IMG onerror=alert(1)>','12:08\tA\t話題は[任意]だ',
  '12:09\tA\t[閉じ忘れ'
  ]);
- assert.deepEqual(items.map(x=>x.entryKind??'text'),[
+ assert.deepEqual(normalize(items.map(x=>x.entryKind??'text')),[
  'media','media','media','media','media','media','annotation','text','text','text']);
  assert.equal(items[6].type,'text');
  ctx.renderChat({items,meta:{user:'A',icons:{},title:'確認'}});
@@ -75,7 +75,7 @@ test('special center-side entry survives TXT export and parser roundtrip',()=>{
  const items=normalize(parse(ctx,serialized.split('\n')));
  assert.equal(items.length,4);
  assert.deepEqual(items.map(x=>x.side),['system','system','system','system']);
- assert.deepEqual(items.map(x=>x.type),kinds);
+ assert.deepEqual(normalize(items.map(x=>x.type)),kinds);
  assert.deepEqual(items.map(x=>x.content),contents);
  assert.deepEqual(items.map(x=>x.entryKind),attrs);
 });
