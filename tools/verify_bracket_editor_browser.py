@@ -65,7 +65,7 @@ def main():
                 assert photo.locator("[data-edit-body]").inner_text()=="[写真]"
                 photo.locator("[data-edit-body]").press("Tab")
                 # Native-like long-press touch move of one semantic record across zones.
-                def move(item_id, zone):
+                def move(item_id, zone, kind="call"):
                     page.evaluate("""async ({id,side}) => {
                       const row=document.querySelector('[data-entry-id="'+id+'"]');
                       const grip=row.querySelector('.balloon,.edit-system');
@@ -82,11 +82,23 @@ def main():
                     }""",{"id":item_id,"side":zone})
                     entry=next(x for x in page.evaluate("window.talkEditor.getProject().items") if x["id"]==item_id)
                     assert entry["side"]==zone,entry
-                    assert entry["entryKind"]=="call" and entry["type"]=="call",entry
-                    assert entry["content"]=="[通話時間 00:42]",entry
-                    assert page.locator(f'[data-entry-id="{item_id}"] .editor-call-card').count()==1
+                    assert entry["entryKind"]==kind,entry
+                    if kind=="call":
+                        assert entry["type"]=="call" and entry["content"]=="[通話時間 00:42]",entry
+                        assert page.locator(f'[data-entry-id="{item_id}"] .editor-call-card').count()==1
+                    if kind=="media":
+                        assert entry["type"]=="attachment" and entry["content"]=="[写真]",entry
                 for zone in ("system","me","you"):
                     move(ids[0],zone)
+                # Media remains media (including the picker) in all three zones.
+                move(ids[2],"system","media")
+                assert page.locator(f'[data-entry-id="{ids[2]}"] .editor-token-card').count()==1
+                assert page.locator(f'[data-entry-id="{ids[2]}"] .editor-token-picker').count()==1
+                page.locator(f'[data-entry-id="{ids[2]}"] .entry-token-caption').dblclick()
+                assert page.locator(f'[data-entry-id="{ids[2]}"] [data-edit-body]').inner_text()=="[写真]"
+                page.locator(f'[data-entry-id="{ids[2]}"] [data-edit-body]').press("Tab")
+                move(ids[2],"me","media")
+                move(ids[2],"you","media")
                 # A centered special entry survives JSON and TXT exports/imports.
                 move(ids[0],"system")
                 final=page.evaluate("window.talkEditor.getProject()")
