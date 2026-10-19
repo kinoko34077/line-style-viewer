@@ -251,9 +251,12 @@ def main():
                   tx.oncomplete=()=>ok([active.result,protectedCopy.result]);
                   tx.onabort=()=>fail(tx.error);
                 });
-                // Restore prioritizes the protected copy; both atomic copies
-                // must actually contain the last touch-side edit.
-                return copies.every(raw=>JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me');
+                // A previous intermediate drag also had side=me; observing
+                // that older persisted state is NOT proof the latest edit saved.
+                // The byte-for-byte current project must reach both CAS copies.
+                const expected=JSON.stringify(window.talkEditor.getProject());
+                return copies.every(raw=>raw===expected &&
+                  JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me');
               }finally{db.close();}
             }""",arg=peerId,timeout=20000)
             count=len(project(page)["items"])
