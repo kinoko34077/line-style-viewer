@@ -184,13 +184,13 @@ def main():
             reader.evaluate("([key,raw])=>localStorage.setItem(key,raw)",[
                 KEY,json.dumps(project([item("STALE-LEGACY")]),ensure_ascii=False)
             ])
-            reader.add_init_script("""() => {
+            reader.add_init_script("""(() => {
               const original=IDBDatabase.prototype.transaction;
               IDBDatabase.prototype.transaction=function(name,mode,...args){
                 if(mode==='readwrite')throw Error('QuotaExceededError: metadata blocked');
                 return original.call(this,name,mode,...args);
               };
-            }""")
+            })()""")
             reader.reload(wait_until="load")
             reader.wait_for_function("!!window.talkEditor?.getProject")
             assert texts(reader)==["READONLY-WINNER"], (
