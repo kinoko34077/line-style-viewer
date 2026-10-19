@@ -173,10 +173,10 @@ function mediaKind(it){
    if(it.media.mime.startsWith('video/'))return 'video';
    return 'file';
  }
- if(it.type==='attachment'||/^\[(写真|動画|ファイル|.*\.(?:png|jpg|jpeg|webp|gif|mp4|pdf))\]$/i.test(it.content)){
-   if(/動画|\.mp4/i.test(it.content))return 'video';
-   if(/ファイル|\.pdf/i.test(it.content))return 'file';
-   return 'image';
+ if(it.type==='attachment'||/^\[(?:写真|動画|ファイル|[^\]\n]+\.(?:png|jpe?g|webp|gif|svg|mp4|webm|pdf|zip|txt|wav|mp3))\]$/i.test(it.content)){
+  if(/^\[動画\]$|\.(?:mp4|webm)\]$/i.test(it.content))return 'video';
+  if(/^\[ファイル\]$|\.(?:pdf|zip|txt|wav|mp3)\]$/i.test(it.content))return 'file';
+  return 'image';
  }
  return null;
 }
