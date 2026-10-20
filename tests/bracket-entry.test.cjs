@@ -96,3 +96,15 @@ test('upper-case bracketed video extensions render a video rather than an empty 
  assert.equal((html.match(/<video /g)||[]).length,2);
  assert.doesNotMatch(html,/<div class="balloon"><\/div>/);
 });
+
+test('explicit legacy call type retains card identity with provider-specific text',()=>{
+ const {ctx,chat}=load();
+ assert.deepEqual(normalize(ctx.classifyEntry('独自形式の通話履歴','call')),
+   {entryKind:'call',callKind:''});
+ assert.deepEqual(normalize(ctx.classifyEntry('独自形式の通話履歴','text')),
+   {entryKind:'text',callKind:''});
+ const item={type:'call',name:'A',time:'12:00',content:'独自形式の通話履歴',entryKind:'call',callKind:''};
+ ctx.renderChat({items:[item],meta:{user:'A',icons:{},title:'旧データ'}});
+ assert.match(chat.innerHTML,/class="call-card"/);
+ assert.match(chat.innerHTML,/独自形式の通話履歴/);
+});
