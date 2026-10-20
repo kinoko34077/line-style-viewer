@@ -79,3 +79,20 @@ test('special center-side entry survives TXT export and parser roundtrip',()=>{
  assert.deepEqual(items.map(x=>x.content),contents);
  assert.deepEqual(items.map(x=>x.entryKind),attrs);
 });
+
+test('upper-case bracketed video extensions render a video rather than an empty bubble',()=>{
+ const {ctx,chat}=load();
+ const items=parse(ctx,[
+   '12:00\tA\t[CLIP.MP4]',
+   '12:01\tB\t[a.WEBM]',
+   '12:02\tA\t[PHOTO.JPG]'
+ ]);
+ assert.deepEqual(normalize(items.map(x=>x.entryKind)),['media','media','media']);
+ ctx.renderChat({items,meta:{user:'A',icons:{},title:'上位互換'}});
+ const html=chat.innerHTML;
+ assert.match(html,/<video src="CLIP\.MP4" controls>/);
+ assert.match(html,/<video src="a\.WEBM" controls>/);
+ assert.match(html,/<img src="PHOTO\.JPG"/);
+ assert.equal((html.match(/<video /g)||[]).length,2);
+ assert.doesNotMatch(html,/<div class="balloon"><\/div>/);
+});
