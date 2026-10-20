@@ -122,6 +122,27 @@ def main():
                 assert [x["entryKind"] for x in restored]==[
                     "call","call","media","media","annotation","text"],restored
                 assert next(x for x in restored if x["id"]==ids[0])["side"]=="system"
+                # Existing exported call records can contain custom, formerly
+                # unrecognized call wording. Keep them as calls until edited.
+                legacy=json.loads(json.dumps(old))
+                legacy["items"].append({
+                    "id":"legacy-call-kind-test","type":"call","side":"you",
+                    "speaker":"相手","time":"12:30",
+                    "content":"旧版独自の通話履歴","callKind":""
+                })
+                page.evaluate("p=>window.talkEditor.replaceProject(p)",legacy)
+                custom=next(x for x in page.evaluate("window.talkEditor.getProject().items") if x["id"]=="legacy-call-kind-test")
+                assert custom["entryKind"]=="call" and custom["type"]=="call",custom
+                row=page.locator('[data-entry-id="legacy-call-kind-test"]')
+                assert row.locator('.editor-call-card').count()==1
+                row.locator('.editor-call-card').dblclick()
+                edit=row.locator('[data-edit-body]')
+                assert edit.inner_text()=="旧版独自の通話履歴"
+                edit.fill("通常の連絡")
+                edit.press("Tab")
+                edited=next(x for x in page.evaluate("window.talkEditor.getProject().items") if x["id"]=="legacy-call-kind-test")
+                assert edited["entryKind"]=="text" and edited["type"]=="text",edited
+                assert row.locator('.editor-call-card').count()==0
                 assert not errors,errors
                 print("BRACKET_CARD_EDITOR_CHROMIUM_PASS",json.dumps({"width":width,"entries":len(final["items"])},ensure_ascii=False),flush=True)
                 context.close()
