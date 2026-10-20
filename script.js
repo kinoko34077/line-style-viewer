@@ -283,6 +283,9 @@ function classifyEntry(value, type='text') {
   const text=String(value??'').trim();
   const callKind=getCallKind(text);
   if(callKind)return {entryKind:'call',callKind};
+  // Legacy JSON/TXT can carry an explicit call type with provider-specific
+  // wording not recognized by the current exact-text detector. Preserve it.
+  if(type==='call')return {entryKind:'call',callKind:''};
   if(isBracketRecord(text)){
     const media=/^\[(?:写真|動画|ファイル|スタンプ)\]$/.test(text) ||
       /^\[(?:stk|stamp|sticker)[_-][^\]]+\.(?:svg|png|gif|webp|jpe?g)\]$/i.test(text) ||
