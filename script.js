@@ -532,7 +532,7 @@ function renderChat({ meta, items }) {
         const safeFilename = escapeHtml(filename);
         if (/\.(jpe?g|png|svg)$/i.test(filename)) {
           contentHTML = `<img src="${safeFilename}" onerror="this.src='./default/default-photo.png'">`;
-        } else if (/\.(mp4|webm)$/.test(filename)) {
+        } else if (/\.(mp4|webm)$/i.test(filename)) {
           contentHTML = `<video src="${safeFilename}" controls></video>`;
         }
       } else if (item.content === '[写真]' || item.content === '[動画]') {
