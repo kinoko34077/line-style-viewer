@@ -31,11 +31,16 @@ function createLineTxt(doc,now=new Date()){
     }
     const time=String(item.time??''),content=(item.content==='[スタンプ]'||/^\[(?:stk|stamp|sticker)[_-][^\]]+\.(?:svg|png|gif|webp|jpe?g)\]$/i.test(item.content))?item.content:item.media?.data?(item.media.mime?.startsWith('image/')?'[写真]':item.media.mime?.startsWith('video/')?'[動画]':'[ファイル]'):String(item.content??'');
     if(item.type==='system'||item.side==='system'){
-      out.push('# system-json: '+JSON.stringify({time,content}));continue;
+      // Bracket/call/media identity must survive a center-side TXT roundtrip.
+      if(item.side==='system'&&item.entryKind&&item.entryKind!=='text'&&item.type!=='system'){
+        out.push('# entry-json: '+JSON.stringify({time,content,speaker:'',side:'system',
+          kind:item.type||'text',entryKind:item.entryKind,callKind:item.callKind||''}));
+      }else out.push('# system-json: '+JSON.stringify({time,content}));
+      continue;
     }
     const speaker=item.side==='me'?self:(clean(item.speaker)&&clean(item.speaker)!==self?clean(item.speaker):peer);
     if(!/^\d{1,2}:\d{2}$/.test(time)){
-      out.push('# entry-json: '+JSON.stringify({time,content,speaker,kind:item.type||'text'}));continue;
+      out.push('# entry-json: '+JSON.stringify({time,content,speaker,kind:item.type||'text',entryKind:item.entryKind||'',callKind:item.callKind||''}));continue;
     }
     out.push(time+'\t'+speaker+'\t'+bodyText(content));
   }

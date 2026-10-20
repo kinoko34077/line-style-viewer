@@ -13,6 +13,8 @@ on:
       - script.js
       - tools/verify_editor_browser.py
       - tools/verify_editor_cache_browser.py
+      - tools/verify_bracket_editor_browser.py
+      - tests/bracket-entry.test.cjs
       - .github/workflows/editor-browser.yml
   workflow_dispatch:
 
@@ -31,6 +33,7 @@ jobs:
           python3 -m playwright install chromium
       - name: Verify editor UI, saving, history, drag and project round-trip
         run: |
+          python3 tools/verify_bracket_editor_browser.py
           python3 tools/verify_editor_browser.py
           python3 tools/verify_editor_cache_browser.py
       - name: Validate opt-in cross-site visual editor in Chrome
