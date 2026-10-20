@@ -450,7 +450,12 @@ function flush(el,withoutRender=false){
      v=`${oldYear}/${String(Number(short[1])).padStart(2,'0')}/${String(Number(short[2])).padStart(2,'0')}${short[3]||''}`;
    }
  }
- if(it&&it[field]!==v)mutate(d=>{const x=d.items.find(i=>i.id===id);if(x){x[field]=v;if(field==='content')refreshEntrySemantics(x);}},{noRender:withoutRender});
+ if(it&&it[field]!==v)mutate(d=>{const x=d.items.find(i=>i.id===id);if(x){x[field]=v;if(field==='content'){
+   // Explicit content edit changes semantics; a legacy call type is only
+   // authoritative until the user replaces its wording.
+   if(x.type==='call')x.type='text';
+   refreshEntrySemantics(x);
+  }}},{noRender:withoutRender});
 }
 transcript.addEventListener('focusin',e=>{if(editorNode(e.target))focusStart.set(e.target,readEdit(e.target));});
 transcript.addEventListener('focusout',e=>{
