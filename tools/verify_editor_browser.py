@@ -260,47 +260,12 @@ def main():
                   JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me');
               }finally{db.close();}
             }""",peerId)
-            # page.wait_for_function() can treat an asynchronous predicate as
-            # truthy before its IndexedDB transaction resolves. Poll from
-            # Python, awaiting every page.evaluate() promise explicitly.
-            # The condition requires BOTH CAS copies to equal the live project.
             deadline=time.monotonic()+20.0
             while not exact_save_ready():
                 if time.monotonic()>=deadline:
                     raise AssertionError("Latest editor document did not reach both IndexedDB copies before reload")
                 page.wait_for_timeout(125)
             print("LINE_EXACT_SAVE_GATE_AWAITED_PASS",flush=True)
-            # Track the first instant where the last saved side diverges.
-            # Values are synthetic-side labels and byte lengths only.
-            def save_checkpoint(label):
-                state=page.evaluate("""async id => {
-                  const db=await new Promise((ok,fail)=>{
-                    const r=indexedDB.open('line-style-editor-cache',1);
-                    r.onsuccess=()=>ok(r.result);r.onerror=()=>fail(r.error);
-                  });
-                  try{
-                    const rows=await new Promise((ok,fail)=>{
-                      const tx=db.transaction('document','readonly'),s=tx.objectStore('document');
-                      const a=s.get('active'),p=s.get('active-protected'),r=s.get('active-revision');
-                      tx.oncomplete=()=>ok([a.result,p.result,r.result]);
-                      tx.onabort=()=>fail(tx.error);
-                    });
-                    const side=raw=>{
-                      try{return JSON.parse(raw)?.items?.find(i=>i.id===id)?.side??null;}catch{return null;}
-                    };
-                    const live=window.talkEditor.getProject();
-                    return {
-                      liveSide:live.items.find(i=>i.id===id)?.side??null,
-                      storedSide:side(rows[0]), protectedSide:side(rows[1]),
-                      revision:rows[2]?String(rows[2]).slice(0,12):null,
-                      liveBytes:JSON.stringify(live).length,
-                      activeBytes:typeof rows[0]==='string'?rows[0].length:null,
-                      status:document.querySelector('#sourceStatus')?.textContent
-                    };
-                  }finally{db.close();}
-                }""",peerId)
-                print("LINE_SAVE_CHECKPOINT "+label+" "+json.dumps(state,ensure_ascii=False),flush=True)
-            save_checkpoint("gate-pass")
             count=len(project(page)["items"])
             # An independent test-owned marker identifies whole-origin storage
             # loss separately from the application's document-store behavior.
@@ -319,95 +284,11 @@ def main():
                 });
               }finally{db.close();}
             }""")
-            save_checkpoint("after-marker")
             print("LINE_PRE_RELOAD_ORIGIN "+json.dumps(page.evaluate("""async () => ({
               href:location.href,origin:location.origin,
               databaseNames:(await indexedDB.databases()).map(d=>d.name),
               hasLocalBackup:!!localStorage.getItem('line-style-editor-cache-backup')
             })"""),ensure_ascii=False),flush=True)
-            # Independent same-origin, no-app observer: distinguish browser
-            # storage-wide loss from app/main-document restore failure.
-            observer_path=OUT/"__ci_storage_observer.html"
-            observer_path.write_text("<!doctype html><html lang='ja'><title>CI storage observer</title><body>observer</body></html>",encoding="utf-8")
-            observer=context.new_page()
-            observer_response=observer.goto(
-                url.replace("/index.html","/visual-editor-result/__ci_storage_observer.html"),
-                wait_until="domcontentloaded")
-            assert observer_response.status==200, "observer must be a real HTTP 200 document"
-            print("LINE_OBSERVER_CONTEXT "+json.dumps(observer.evaluate("""() => ({
-              href:location.href,origin:location.origin,
-              markerLocal:localStorage.getItem('__line_ci_reload_marker'),
-              dbNames:'pending'
-            })""")),flush=True)
-            def observer_storage(read_page=observer):
-                return read_page.evaluate("""async () => {
-                  const q=indexedDB.open('line-style-editor-cache',1);
-                  const db=await new Promise((ok,fail)=>{
-                    q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
-                  });
-                  try{
-                    return await new Promise((ok,fail)=>{
-                      const tx=db.transaction('document','readonly'),s=tx.objectStore('document');
-                      const keys=s.getAllKeys(),active=s.get('active'),
-                        protectedCopy=s.get('active-protected'),rev=s.get('active-revision');
-                      tx.oncomplete=()=>ok({
-                        keys:keys.result.map(String).sort(),
-                        activeBytes:typeof active.result==='string'?active.result.length:null,
-                        protectedBytes:typeof protectedCopy.result==='string'?protectedCopy.result.length:null,
-                        hasRevision:!!rev.result,
-                        dbVersion:db.version
-                      });
-                      tx.onabort=()=>fail(tx.error);
-                    });
-                  }finally{db.close();}
-                }""")
-            print("LINE_OBSERVER_PRE_RELOAD "+json.dumps(observer_storage()),flush=True)
-            print("LINE_PRIMARY_PRE_RELOAD "+json.dumps(observer_storage(page)),flush=True)
-            save_checkpoint("after-observer")
-            # CI-only write trace: distinguish app-initiated deletion/overwrite
-            # from browser-origin storage disappearance. Never log chat bodies.
-            probe = """() => {
-              if (window.__line_idb_probe_installed) return;
-              window.__line_idb_probe_installed = true;
-              const record = (op, name, key, size) => {
-                if (name !== 'document' && op !== 'deleteDatabase') return;
-                try {
-                  const k='__line_ci_idb_operations';
-                  const xs=JSON.parse(localStorage.getItem(k)||'[]');
-                  xs.push({op,name,key:String(key??''),size:size??null,
-                           at:Date.now(), stack:(new Error()).stack?.split('\\n').slice(1,4).join(' | ')});
-                  localStorage.setItem(k,JSON.stringify(xs.slice(-60)));
-                } catch (_) {}
-              };
-              for (const op of ['put','add','delete','clear']) {
-                const old=IDBObjectStore.prototype[op];
-                IDBObjectStore.prototype[op]=function(...args) {
-                  record(op,this.name,args.length>1?args[1]:args[0],
-                         typeof args[0]==='string'?args[0].length:null);
-                  return old.apply(this,args);
-                };
-              }
-              record('probe-installed','document',location.href,null);
-              const open=IDBFactory.prototype.open;
-              IDBFactory.prototype.open=function(...args) {
-                const req=open.apply(this,args);
-                if(args[0]==='line-style-editor-cache') {
-                  record('open-request','document',args[0],null);
-                  req.addEventListener('upgradeneeded',e=>record('open-upgrade','document',args[0],e.newVersion));
-                  req.addEventListener('success',()=>record('open-success','document',
-                    args[0]+' stores='+[...req.result.objectStoreNames].join(','),req.result.version));
-                  req.addEventListener('error',()=>record('open-error','document',args[0],null));
-                }
-                return req;
-              };
-              const drop=IDBFactory.prototype.deleteDatabase;
-              IDBFactory.prototype.deleteDatabase=function(...args) {
-                record('deleteDatabase','document',args[0],null);
-                return drop.apply(this,args);
-              };
-            }"""
-            page.evaluate(probe)
-            page.add_init_script("("+probe+")()")
             page.reload()
             # A matching title is not evidence that asynchronous IDB restore
             # completed; wait for the exact persisted row/side after reload.
@@ -459,12 +340,6 @@ def main():
                         }finally{db.close();}
                     }""",peerId)
                     print("LINE_RESTORE_DIAGNOSTIC "+json.dumps(diagnostics,ensure_ascii=False),flush=True)
-                    trace=page.evaluate("""() => ({
-                      installed: !!window.__line_idb_probe_installed,
-                      records: JSON.parse(localStorage.getItem('__line_ci_idb_operations')||'[]')
-                    })""")
-                    print("LINE_IDB_OPERATION_TRACE "+json.dumps(trace,ensure_ascii=False),flush=True)
-                    print("LINE_OBSERVER_POST_RELOAD "+json.dumps(observer_storage()),flush=True)
                 except Exception as diagnostic_error:
                     print("LINE_RESTORE_DIAGNOSTIC_UNAVAILABLE "+str(diagnostic_error),flush=True)
                 raise
