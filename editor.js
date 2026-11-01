@@ -149,7 +149,7 @@ async function saveCache(serialized){
  }
  const db=await database();
  return new Promise((resolve,reject)=>{
-  const tx=db.transaction('document','readwrite',{durability:'strict'}),store=tx.objectStore('document');
+  const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
   const observed=store.get('active-revision'),raw=store.get('active');
   let conflict=false,nextRevision=null;
   // Both probes and puts belong to one serializable IndexedDB readwrite transaction.
@@ -199,7 +199,7 @@ async function resumeAutosave(){
   const db=await database();
   const nextRevision=identifier(),archiveKey='conflict-archive-'+identifier();
   await new Promise((resolve,reject)=>{
-   const tx=db.transaction('document','readwrite',{durability:'strict'}),store=tx.objectStore('document');
+   const tx=db.transaction('document','readwrite'),store=tx.objectStore('document');
    const raw=store.get('active'),protectedCopy=store.get('active-protected'),
      revision=store.get('active-revision');
    let concurrent=false;
