@@ -282,6 +282,37 @@ def main():
               databaseNames:(await indexedDB.databases()).map(d=>d.name),
               hasLocalBackup:!!localStorage.getItem('line-style-editor-cache-backup')
             })"""),ensure_ascii=False),flush=True)
+            # CI-only write trace: distinguish app-initiated deletion/overwrite
+            # from browser-origin storage disappearance. Never log chat bodies.
+            probe = """() => {
+              if (window.__line_idb_probe_installed) return;
+              window.__line_idb_probe_installed = true;
+              const record = (op, name, key, size) => {
+                if (name !== 'document' && op !== 'deleteDatabase') return;
+                try {
+                  const k='__line_ci_idb_operations';
+                  const xs=JSON.parse(sessionStorage.getItem(k)||'[]');
+                  xs.push({op,name,key:String(key??''),size:size??null,
+                           at:Date.now(), stack:(new Error()).stack?.split('\\n').slice(1,4).join(' | ')});
+                  sessionStorage.setItem(k,JSON.stringify(xs.slice(-60)));
+                } catch (_) {}
+              };
+              for (const op of ['put','add','delete','clear']) {
+                const old=IDBObjectStore.prototype[op];
+                IDBObjectStore.prototype[op]=function(...args) {
+                  record(op,this.name,args.length>1?args[1]:args[0],
+                         typeof args[0]==='string'?args[0].length:null);
+                  return old.apply(this,args);
+                };
+              }
+              const drop=IDBFactory.prototype.deleteDatabase;
+              IDBFactory.prototype.deleteDatabase=function(...args) {
+                record('deleteDatabase','',args[0],null);
+                return drop.apply(this,args);
+              };
+            }"""
+            page.evaluate(probe)
+            page.add_init_script(probe)
             page.reload()
             # A matching title is not evidence that asynchronous IDB restore
             # completed; wait for the exact persisted row/side after reload.
@@ -333,6 +364,8 @@ def main():
                         }finally{db.close();}
                     }""",peerId)
                     print("LINE_RESTORE_DIAGNOSTIC "+json.dumps(diagnostics,ensure_ascii=False),flush=True)
+                    trace=page.evaluate("sessionStorage.getItem('__line_ci_idb_operations')||'[]'")
+                    print("LINE_IDB_OPERATION_TRACE "+trace,flush=True)
                 except Exception as diagnostic_error:
                     print("LINE_RESTORE_DIAGNOSTIC_UNAVAILABLE "+str(diagnostic_error),flush=True)
                 raise
