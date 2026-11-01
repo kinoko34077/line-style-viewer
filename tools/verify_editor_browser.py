@@ -312,7 +312,7 @@ def main():
               };
             }"""
             page.evaluate(probe)
-            page.add_init_script(probe)
+            page.add_init_script("("+probe+")()")
             page.reload()
             # A matching title is not evidence that asynchronous IDB restore
             # completed; wait for the exact persisted row/side after reload.
