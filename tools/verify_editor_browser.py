@@ -284,9 +284,18 @@ def main():
             })"""),ensure_ascii=False),flush=True)
             # Independent same-origin, no-app observer: distinguish browser
             # storage-wide loss from app/main-document restore failure.
+            observer_path=OUT/"__ci_storage_observer.html"
+            observer_path.write_text("<!doctype html><html lang='ja'><title>CI storage observer</title><body>observer</body></html>",encoding="utf-8")
             observer=context.new_page()
-            observer.goto(url.replace("/index.html","/__ci_no_script_probe__.html"),
-                          wait_until="domcontentloaded")
+            observer_response=observer.goto(
+                url.replace("/index.html","/visual-editor-result/__ci_storage_observer.html"),
+                wait_until="domcontentloaded")
+            assert observer_response.status==200, "observer must be a real HTTP 200 document"
+            print("LINE_OBSERVER_CONTEXT "+json.dumps(observer.evaluate("""() => ({
+              href:location.href,origin:location.origin,
+              markerLocal:localStorage.getItem('__line_ci_reload_marker'),
+              dbNames:'pending'
+            })""")),flush=True)
             def observer_storage():
                 return observer.evaluate("""async () => {
                   const q=indexedDB.open('line-style-editor-cache',1);
