@@ -7,7 +7,7 @@ const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'..','editor.js'),'utf8');
 
 function creator(){
- const handlers=new Map(),controls={};
+ const handlers=new Map(),controls={},timers=[];
  function el(id){
   const e={innerHTML:'',value:'',dataset:{},disabled:false,scrollTop:0,scrollHeight:100,clientHeight:100,
    textContent:'',hidden:false,addEventListener(type,fn){handlers.set(id+':'+type,fn)}};
@@ -17,14 +17,14 @@ function creator(){
   el(id);
  const doc={activeElement:null,body:{classList:{add(){},remove(){}}},getElementById(id){return controls[id]||null},
   addEventListener(){}};
- const context={document:doc,window:{},console,crypto:{randomUUID:()=>String(++creator.counter).padStart(4,'0')},
-  localStorage:{getItem:()=>null},indexedDB:null,
-  setTimeout:()=>1,clearTimeout(){},confirm:()=>true};
+ const context={document:doc,window:{addEventListener(type,fn){handlers.set('window:'+type,fn)}},console,crypto:{randomUUID:()=>String(++creator.counter).padStart(4,'0')},
+  localStorage:{getItem:()=>null,setItem(){}},indexedDB:null,
+  setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){},confirm:()=>true};
  vm.createContext(context);
  vm.runInContext(source,context,{filename:'editor.js'});
  function project(){return context.window.talkEditor.getProject();}
  function replace(data){context.window.talkEditor.replaceProject(data);}
- return {context,controls,handlers,project,replace,editor:context.window.talkEditor,
+ return {context,controls,handlers,timers,project,replace,editor:context.window.talkEditor,
   remove(index){const target={closest(sel){return sel==='[data-delete-person-index]'?{dataset:{deletePersonIndex:String(index)}}:null;}};
    return handlers.get('participantList:click')({target});}};
 }
@@ -108,4 +108,35 @@ test('renaming a participant updates remembered peer as well as visible speaker'
  assert.equal(v.project().items[1].speaker,'ボブ');
  assert.equal(v.project().items[1].previousSpeaker,'ボブ');
  assert.match(v.controls.participantList.innerHTML,/ボブ/);
+});
+
+// #47: last edit pending a debounce/IndexedDB commit is not a completed save.
+// The native beforeunload prompt is best effort (some mobile browsers ignore it).
+function unloadProbe(v){
+ const event={prevented:false,returnValue:null,preventDefault(){this.prevented=true;}};
+ v.handlers.get('window:beforeunload')(event);
+ return event;
+}
+test('beforeunload is silent for a clean project, warns during an unsaved edit, clears after fallback is acknowledged',async()=>{
+ const v=creator();
+ assert.equal(unloadProbe(v).prevented,false);
+ v.editor.addItem('text','me','Pending write');
+ assert.equal(unloadProbe(v).prevented,true);
+ assert.equal(unloadProbe(v).returnValue,'');
+ await v.timers.at(-1)(); // fake IndexedDB unavailable, localStorage fallback succeeds
+ assert.equal(unloadProbe(v).prevented,false);
+});
+test('pending inline typing warns even before editor debounce converts it into a document mutation',()=>{
+ const v=creator();
+ const inline={matches:()=>true,isConnected:true};
+ v.handlers.get('chatContainer:input')({target:inline});
+ assert.equal(unloadProbe(v).prevented,true);
+});
+test('when both cache writes fail, unsaved warning remains active',async()=>{
+ const v=creator();
+ v.context.localStorage.setItem=()=>{throw Error('QuotaExceededError');};
+ v.editor.addItem('text','me','No durable storage');
+ await v.timers.at(-1)();
+ assert.equal(unloadProbe(v).prevented,true);
+ assert.match(v.controls.editorErrorToast.textContent,/自動保存ができません/);
 });

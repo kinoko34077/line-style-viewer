@@ -111,6 +111,43 @@ def main():
             page.reload(wait_until="load")
             page.wait_for_function("window.talkEditor?.getProject().items.length===2")
             assert texts(page)==["LEGACY","MIGRATED"]
+            # Legacy A may remain in localStorage after current IDB B has been
+            # durably saved. A is not proof of a newer concurrent tab.
+            page.evaluate("window.talkEditor.addItem('text','me','IDB-NEWER-B')")
+            saved(page,"ブラウザ内に自動保存しました")
+            page.reload(wait_until="load")
+            page.wait_for_function("window.talkEditor?.getProject().items.length===3")
+            assert texts(page)==["LEGACY","MIGRATED","IDB-NEWER-B"]
+            page.evaluate("window.talkEditor.addItem('text','me','AFTER-RELOAD')")
+            saved(page,"ブラウザ内に自動保存しました")
+            assert "AFTER-RELOAD" in page.evaluate(READ_DB)
+            print("LEGACY_BACKUP_STALE_A_IDB_B_PASS",flush=True)
+            # Another old tab now writes fallback C *after* the observed
+            # original backup A. Preserve both; never auto-clobber new C.
+            later=json.dumps(project([item("OLD-TAB-NEW-C")]),ensure_ascii=False)
+            page.evaluate("([key,raw])=>localStorage.setItem(key,raw)",[KEY,later])
+            page.reload(wait_until="load")
+            page.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('旧タブで簡易キャッシュが前回確認後に変わりました')""")
+            assert texts(page)==["LEGACY","MIGRATED","IDB-NEWER-B","AFTER-RELOAD"]
+            page.evaluate("window.talkEditor.addItem('text','me','SHOULD-NOT-CLOBBER-C')")
+            page.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""")
+            assert "SHOULD-NOT-CLOBBER-C" not in page.evaluate(READ_DB)
+            assert "OLD-TAB-NEW-C" in page.evaluate("localStorage.getItem('line-style-editor-cache-backup')")
+            print("LEGACY_BACKUP_NEWER_C_CONFLICT_PASS",flush=True)
+            c.close()
+            # Malformed fallback is never parsed while valid current IDB B
+            # exists; show B and retain raw malformed bytes unmodified.
+            c,page=open_page(browser,url)
+            page.evaluate("window.talkEditor.addItem('text','me','VALID-IDB-B')")
+            saved(page,"ブラウザ内に自動保存しました")
+            page.evaluate("localStorage.setItem('line-style-editor-cache-backup','{broken legacy json')")
+            page.reload(wait_until="load")
+            page.wait_for_function("window.talkEditor?.getProject().items.length===1")
+            assert texts(page)==["VALID-IDB-B"]
+            assert page.evaluate("localStorage.getItem('line-style-editor-cache-backup')")=="{broken legacy json"
+            print("MALFORMED_BACKUP_VALID_IDB_PASS",flush=True)
             c.close()
             # Large document must use IndexedDB instead of the <=1.6m backup cap.
             c,page=open_page(browser,url)
@@ -126,6 +163,41 @@ def main():
             large=page.evaluate(READ_DB)
             assert len(large)>1600000,len(large)
             assert len(json.loads(large)["items"])==9
+            c.close()
+            # #47 P2: a read-only IDB restore must keep the authoritative
+            # document even when a separate provenance metadata write aborts.
+            c,reader=open_page(browser,url)
+            reader.evaluate("window.talkEditor.addItem('text','me','READONLY-WINNER')")
+            saved(reader,"ブラウザ内に自動保存しました")
+            assert "READONLY-WINNER" in reader.evaluate(READ_DB)
+            reader.evaluate("""async () => {
+              const db=await new Promise((ok,fail)=>{
+                const req=indexedDB.open('line-style-editor-cache',1);
+                req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+              });
+              await new Promise((ok,fail)=>{
+                const tx=db.transaction('document','readwrite');
+                tx.objectStore('document').delete('legacy-backup-observed');
+                tx.oncomplete=ok;tx.onabort=()=>fail(tx.error);
+              });db.close();
+            }""")
+            reader.evaluate("([key,raw])=>localStorage.setItem(key,raw)",[
+                KEY,json.dumps(project([item("STALE-LEGACY")]),ensure_ascii=False)
+            ])
+            reader.add_init_script("""(() => {
+              const original=IDBDatabase.prototype.transaction;
+              IDBDatabase.prototype.transaction=function(name,mode,...args){
+                if(mode==='readwrite')throw Error('QuotaExceededError: metadata blocked');
+                return original.call(this,name,mode,...args);
+              };
+            })()""")
+            reader.reload(wait_until="load")
+            reader.wait_for_function("!!window.talkEditor?.getProject")
+            assert texts(reader)==["READONLY-WINNER"], (
+                "metadata write rejection must not cause stale backup restore"
+            )
+            assert "READONLY-WINNER" in reader.evaluate(READ_DB)
+            print("READONLY_IDB_METADATA_WRITE_FAIL_RECOVERS_WINNER_PASS",flush=True)
             c.close()
             # IndexedDB inaccessible: legacy backup remains a truthful fallback.
             c,page=open_page(browser,url)
@@ -145,8 +217,235 @@ def main():
             saved(page,"自動保存ができません。右上の保存でJSONを書き出してください")
             assert page.locator("#editorErrorToast").is_visible()
             c.close()
+            # #47: both tabs capture the same original empty revision. The
+            # first tab commits atomically; stale tab must not overwrite it.
+            c,first=open_page(browser,url)
+            stale=c.new_page()
+            stale.goto(url,wait_until="load")
+            stale.wait_for_function("!!window.talkEditor?.getProject")
+            first.evaluate("window.talkEditor.addItem('text','me','PRIMARY-TAB-WINS')")
+            saved(first,"ブラウザ内に自動保存しました")
+            assert "PRIMARY-TAB-WINS" in first.evaluate(READ_DB)
+            stale.evaluate("window.talkEditor.addItem('text','me','STALE-TAB-UNSAVED')")
+            stale.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+              timeout=20000)
+            assert stale.locator('#editorErrorToast').is_visible()
+            assert texts(stale)==["STALE-TAB-UNSAVED"], "stale work stays in memory for export"
+            assert texts(first)==["PRIMARY-TAB-WINS"]
+            current=json.loads(first.evaluate(READ_DB))
+            assert [row["content"] for row in current["items"]]==["PRIMARY-TAB-WINS"]
+            assert stale.evaluate("localStorage.getItem('line-style-editor-cache-backup')") is None, (
+                "stale-tab conflict must not silently overwrite legacy backup"
+            )
+            # A new-version CAS conflict must offer the same explicit
+            # no-silent-overwrite recovery as a pre-CAS legacy mismatch.
+            assert stale.get_by_role("button",name="競合データを保存").is_visible()
+            assert stale.get_by_role("button",name="自動保存を復旧").is_visible()
+            with stale.expect_download(timeout=20000) as cas_download:
+                stale.get_by_role("button",name="競合データを保存").click()
+            assert cas_download.value.suggested_filename=="line-chat-conflict-backup.json"
+            stale.once("dialog",lambda dialog:dialog.accept())
+            stale.get_by_role("button",name="自動保存を復旧").click()
+            stale.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('自動保存を再開しました')""",
+              timeout=20000)
+            assert "STALE-TAB-UNSAVED" in stale.evaluate(READ_DB)
+            archived_cas=stale.evaluate("""async () => {
+              const db=await new Promise((ok,fail)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
+              });
+              try{return await new Promise((ok,fail)=>{
+                const tx=db.transaction('document','readonly'),store=tx.objectStore('document');
+                const keys=store.getAllKeys();
+                keys.onsuccess=()=>{
+                  const k=keys.result.find(x=>String(x).startsWith('conflict-archive-'));
+                  if(!k){fail(Error('missing CAS recovery archive'));return;}
+                  const v=store.get(k);
+                  v.onsuccess=()=>ok(v.result);v.onerror=()=>fail(v.error);
+                };keys.onerror=()=>fail(keys.error);
+              });}finally{db.close();}
+            }""")
+            assert "PRIMARY-TAB-WINS" in archived_cas["raw"]
+            assert "PRIMARY-TAB-WINS" in archived_cas["protected"]
+            stale.evaluate("window.talkEditor.addItem('text','me','AFTER-CAS-RECOVERY')")
+            saved(stale,"ブラウザ内に自動保存しました")
+            assert "AFTER-CAS-RECOVERY" in stale.evaluate(READ_DB)
+            print("CROSS_TAB_CAS_EXPLICIT_RECOVERY_PASS",flush=True)
+            c.close()
+            # A delayed initial read must not grant a fresh blank editor
+            # authority to overwrite a previously saved nonempty document.
+            c,seed=open_page(browser,url)
+            seed.evaluate("window.talkEditor.addItem('text','me','RESTORE-MUST-PRESERVE')")
+            saved(seed,"ブラウザ内に自動保存しました")
+            seed.close()
+            late=c.new_page()
+            late.add_init_script("""(() => {
+              const nativeDB=window.indexedDB;
+              let first=true;
+              Object.defineProperty(window,'indexedDB',{
+                configurable:true,
+                value:{open(...args) {
+                  const request=nativeDB.open(...args);
+                  if(!first)return request;
+                  first=false;
+                  return new Proxy(request,{
+                    get(target,key) {return Reflect.get(target,key,target);},
+                    set(target,key,value) {
+                      if(key==='onsuccess'){
+                        target.onsuccess=event=>setTimeout(()=>value(event),900);
+                        return true;
+                      }
+                      return Reflect.set(target,key,value,target);
+                    }
+                  });
+                }}
+              });
+            })();""")
+            late.goto(url,wait_until="load")
+            late.wait_for_function("!!window.talkEditor?.getProject")
+            late.evaluate("window.talkEditor.addItem('text','me','EARLY-UNRESTORED-EDIT')")
+            late.wait_for_function("""() =>
+                document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+                timeout=20000)
+            assert "EARLY-UNRESTORED-EDIT" in texts(late)
+            actual=json.loads(late.evaluate(READ_DB))
+            assert [i["content"] for i in actual["items"]]==["RESTORE-MUST-PRESERVE"], (
+                "fast edit before async restore must not overwrite the saved project"
+            )
+            print("EARLY_RESTORE_RACE_DENIED_PASS",flush=True)
+            c.close()
+            # Mixed-version regression: a pre-CAS tab writes the original raw
+            # key without revision metadata. New-version copy must survive.
+            c,newer=open_page(browser,url)
+            newer.evaluate("window.talkEditor.addItem('text','me','PROTECTED-V2')")
+            saved(newer,"ブラウザ内に自動保存しました")
+            direct_write="""async raw => {
+              const db=await new Promise((resolve,reject)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);
+              });
+              await new Promise((resolve,reject)=>{
+                const t=db.transaction('document','readwrite');
+                t.objectStore('document').put(raw,'active');
+                t.oncomplete=resolve;t.onabort=()=>reject(t.error);
+              }); db.close();
+            }"""
+            legacy=json.dumps(project([item("PRE-CAS-OLD-TAB")]),ensure_ascii=False)
+            newer.evaluate(direct_write,legacy)
+            assert "PRE-CAS-OLD-TAB" in newer.evaluate(READ_DB)
+            newer.reload(wait_until="load")
+            newer.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('旧タブで保存内容が変更されました')""")
+            assert texts(newer)==["PROTECTED-V2"], "new protected copy must win on reload"
+            newer.evaluate("window.talkEditor.addItem('text','me','NEVER-OVERWRITE-OLD-TAB')")
+            newer.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+              timeout=20000)
+            assert "PRE-CAS-OLD-TAB" in newer.evaluate(READ_DB)
+            protected= newer.evaluate("""async () => {
+                const db=await new Promise((ok,fail)=>{
+                  const req=indexedDB.open('line-style-editor-cache',1);
+                  req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                });
+                try{return await new Promise((ok,fail)=>{
+                  const tx=db.transaction('document','readonly');
+                  const req=tx.objectStore('document').get('active-protected');
+                  req.onsuccess=()=>ok(req.result);req.onerror=()=>fail(req.error);
+                });}finally{db.close();}
+            }""")
+            assert [v["content"] for v in json.loads(protected)["items"]]==["PROTECTED-V2"]
+            print("LEGACY_TAB_PROTECTED_SNAPSHOT_PASS",flush=True)
+            # Explicit recovery must keep BOTH conflicting copies as an IDB
+            # archive, and must permit subsequent autosave without site wipe.
+            assert newer.get_by_role("button",name="自動保存を復旧").is_visible()
+            with newer.expect_download(timeout=20000) as archive_download:
+                newer.get_by_role("button",name="競合データを保存").click()
+            assert archive_download.value.suggested_filename=="line-chat-conflict-backup.json"
+            newer.once("dialog",lambda dialog:dialog.accept())
+            newer.get_by_role("button",name="自動保存を復旧").click()
+            newer.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('自動保存を再開しました')""",
+              timeout=20000)
+            newer.evaluate("window.talkEditor.addItem('text','me','SAVE-RESUMED-AFTER-CONFLICT')")
+            saved(newer,"ブラウザ内に自動保存しました")
+            assert "SAVE-RESUMED-AFTER-CONFLICT" in newer.evaluate(READ_DB)
+            archived=newer.evaluate("""async () => {
+              const db=await new Promise((ok,fail)=>{
+                const q=indexedDB.open('line-style-editor-cache',1);
+                q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
+              });
+              try{return await new Promise((ok,fail)=>{
+                const tx=db.transaction('document','readonly');
+                const store=tx.objectStore('document'),req=store.getAllKeys();
+                req.onsuccess=()=>{
+                  const key=req.result.find(x=>String(x).startsWith('conflict-archive-'));
+                  if(!key){fail(Error('missing atomic archive'));return;}
+                  const value=store.get(key);value.onsuccess=()=>ok(value.result);
+                  value.onerror=()=>fail(value.error);
+                };
+                req.onerror=()=>fail(req.error);
+              });}finally{db.close();}
+            }""")
+            assert "PRE-CAS-OLD-TAB" in archived["raw"]
+            assert "PROTECTED-V2" in archived["protected"]
+            print("MISMATCH_EXPLICIT_RECOVERY_AUTOSAVE_PASS",flush=True)
+            c.close()
+            # Before the first post-upgrade save, a legacy direct write must
+            # also abort a new-tab transaction by comparing raw active bytes.
+            c,firstNew=open_page(browser,url)
+            firstNew.wait_for_timeout(250)
+            firstNew.evaluate(direct_write,json.dumps(project([item("LEGACY-FIRST")]),ensure_ascii=False))
+            firstNew.evaluate("window.talkEditor.addItem('text','me','NOT-CLOBBER-LEGACY')")
+            firstNew.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('別タブでトークが更新されました')""",
+              timeout=20000)
+            assert "LEGACY-FIRST" in firstNew.evaluate(READ_DB)
+            print("LEGACY_TAB_FIRST_WRITE_GUARD_PASS",flush=True)
+            c.close()
+            # Existing nonempty IDB snapshot must not mask a later localStorage
+            # fallback and produce a false green "saved" banner on reload.
+            c,dirty=open_page(browser,url)
+            dirty.evaluate("window.talkEditor.addItem('text','me','DURABLE-ORIGINAL')")
+            saved(dirty,"ブラウザ内に自動保存しました")
+            dirty.evaluate("""() => {
+              const original=IDBDatabase.prototype.transaction;
+              IDBDatabase.prototype.transaction=function(name,mode,...args){
+                if(mode==='readwrite')throw Error('QuotaExceededError: simulated');
+                return original.call(this,name,mode,...args);
+              };
+            }""")
+            dirty.evaluate("window.talkEditor.addItem('text','me','MEMORY-ONLY-NEW')")
+            dirty.wait_for_function("""() =>
+              document.querySelector('#sourceStatus')?.textContent?.includes('保存先の更新に失敗しました')""",
+              timeout=20000)
+            assert dirty.locator('#editorErrorToast').is_visible()
+            assert texts(dirty)==["DURABLE-ORIGINAL","MEMORY-ONLY-NEW"]
+            assert "MEMORY-ONLY-NEW" not in dirty.evaluate(READ_DB)
+            assert dirty.evaluate("localStorage.getItem('line-style-editor-cache-backup')") is None
+            print("IDB_WRITE_FAIL_NO_FALSE_FALLBACK_PASS",flush=True)
+            c.close()
+            # Integrated #62 warning-only behavior must remain coherent with
+            # the revision CAS, startup restore and fail-closed save guards.
+            c,warning=open_page(browser,url)
+            probe="""() => {
+              const e=new Event('beforeunload',{cancelable:true});
+              window.dispatchEvent(e);return e.defaultPrevented;
+            }"""
+            assert warning.evaluate(probe) is False
+            warning.evaluate("window.talkEditor.addItem('text','me','DIRTY-WARN')")
+            assert warning.evaluate(probe) is True
+            saved(warning,"ブラウザ内に自動保存しました")
+            assert warning.evaluate(probe) is False
+            inline=warning.locator('[data-edit-body]').first
+            inline.dblclick()
+            inline.fill('INLINE-WARN-PENDING')
+            assert warning.evaluate(probe) is True
+            print("INTEGRATED_CAS_DIRTY_UNLOAD_PASS",flush=True)
+            c.close()
             browser.close()
-            print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure",
+            print("EDITOR_CACHE_CHROME_PASS primary/reload/sequential/legacy/large/fallback/dual-failure/cross-tab-CAS",
                   flush=True)
     finally:
         server.shutdown()
