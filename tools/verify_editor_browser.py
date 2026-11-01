@@ -259,6 +259,37 @@ def main():
                   JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me');
               }finally{db.close();}
             }""",arg=peerId,timeout=20000)
+            # Track the first instant where the last saved side diverges.
+            # Values are synthetic-side labels and byte lengths only.
+            def save_checkpoint(label):
+                state=page.evaluate("""async id => {
+                  const db=await new Promise((ok,fail)=>{
+                    const r=indexedDB.open('line-style-editor-cache',1);
+                    r.onsuccess=()=>ok(r.result);r.onerror=()=>fail(r.error);
+                  });
+                  try{
+                    const rows=await new Promise((ok,fail)=>{
+                      const tx=db.transaction('document','readonly'),s=tx.objectStore('document');
+                      const a=s.get('active'),p=s.get('active-protected'),r=s.get('active-revision');
+                      tx.oncomplete=()=>ok([a.result,p.result,r.result]);
+                      tx.onabort=()=>fail(tx.error);
+                    });
+                    const side=raw=>{
+                      try{return JSON.parse(raw)?.items?.find(i=>i.id===id)?.side??null;}catch{return null;}
+                    };
+                    const live=window.talkEditor.getProject();
+                    return {
+                      liveSide:live.items.find(i=>i.id===id)?.side??null,
+                      storedSide:side(rows[0]), protectedSide:side(rows[1]),
+                      revision:rows[2]?String(rows[2]).slice(0,12):null,
+                      liveBytes:JSON.stringify(live).length,
+                      activeBytes:typeof rows[0]==='string'?rows[0].length:null,
+                      status:document.querySelector('#sourceStatus')?.textContent
+                    };
+                  }finally{db.close();}
+                }""",peerId)
+                print("LINE_SAVE_CHECKPOINT "+label+" "+json.dumps(state,ensure_ascii=False),flush=True)
+            save_checkpoint("gate-pass")
             count=len(project(page)["items"])
             # An independent test-owned marker identifies whole-origin storage
             # loss separately from the application's document-store behavior.
@@ -277,6 +308,7 @@ def main():
                 });
               }finally{db.close();}
             }""")
+            save_checkpoint("after-marker")
             print("LINE_PRE_RELOAD_ORIGIN "+json.dumps(page.evaluate("""async () => ({
               href:location.href,origin:location.origin,
               databaseNames:(await indexedDB.databases()).map(d=>d.name),
@@ -320,6 +352,7 @@ def main():
                 }""")
             print("LINE_OBSERVER_PRE_RELOAD "+json.dumps(observer_storage()),flush=True)
             print("LINE_PRIMARY_PRE_RELOAD "+json.dumps(observer_storage(page)),flush=True)
+            save_checkpoint("after-observer")
             # CI-only write trace: distinguish app-initiated deletion/overwrite
             # from browser-origin storage disappearance. Never log chat bodies.
             probe = """() => {
