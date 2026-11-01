@@ -296,8 +296,8 @@ def main():
               markerLocal:localStorage.getItem('__line_ci_reload_marker'),
               dbNames:'pending'
             })""")),flush=True)
-            def observer_storage():
-                return observer.evaluate("""async () => {
+            def observer_storage(read_page=observer):
+                return read_page.evaluate("""async () => {
                   const q=indexedDB.open('line-style-editor-cache',1);
                   const db=await new Promise((ok,fail)=>{
                     q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
@@ -319,6 +319,7 @@ def main():
                   }finally{db.close();}
                 }""")
             print("LINE_OBSERVER_PRE_RELOAD "+json.dumps(observer_storage()),flush=True)
+            print("LINE_PRIMARY_PRE_RELOAD "+json.dumps(observer_storage(page)),flush=True)
             # CI-only write trace: distinguish app-initiated deletion/overwrite
             # from browser-origin storage disappearance. Never log chat bodies.
             probe = """() => {
