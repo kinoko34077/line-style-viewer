@@ -291,10 +291,10 @@ def main():
                 if (name !== 'document' && op !== 'deleteDatabase') return;
                 try {
                   const k='__line_ci_idb_operations';
-                  const xs=JSON.parse(sessionStorage.getItem(k)||'[]');
+                  const xs=JSON.parse(localStorage.getItem(k)||'[]');
                   xs.push({op,name,key:String(key??''),size:size??null,
                            at:Date.now(), stack:(new Error()).stack?.split('\\n').slice(1,4).join(' | ')});
-                  sessionStorage.setItem(k,JSON.stringify(xs.slice(-60)));
+                  localStorage.setItem(k,JSON.stringify(xs.slice(-60)));
                 } catch (_) {}
               };
               for (const op of ['put','add','delete','clear']) {
@@ -305,9 +305,22 @@ def main():
                   return old.apply(this,args);
                 };
               }
+              record('probe-installed','document',location.href,null);
+              const open=IDBFactory.prototype.open;
+              IDBFactory.prototype.open=function(...args) {
+                const req=open.apply(this,args);
+                if(args[0]==='line-style-editor-cache') {
+                  record('open-request','document',args[0],null);
+                  req.addEventListener('upgradeneeded',e=>record('open-upgrade','document',args[0],e.newVersion));
+                  req.addEventListener('success',()=>record('open-success','document',
+                    args[0]+' stores='+[...req.result.objectStoreNames].join(','),req.result.version));
+                  req.addEventListener('error',()=>record('open-error','document',args[0],null));
+                }
+                return req;
+              };
               const drop=IDBFactory.prototype.deleteDatabase;
               IDBFactory.prototype.deleteDatabase=function(...args) {
-                record('deleteDatabase','',args[0],null);
+                record('deleteDatabase','document',args[0],null);
                 return drop.apply(this,args);
               };
             }"""
@@ -364,8 +377,11 @@ def main():
                         }finally{db.close();}
                     }""",peerId)
                     print("LINE_RESTORE_DIAGNOSTIC "+json.dumps(diagnostics,ensure_ascii=False),flush=True)
-                    trace=page.evaluate("sessionStorage.getItem('__line_ci_idb_operations')||'[]'")
-                    print("LINE_IDB_OPERATION_TRACE "+trace,flush=True)
+                    trace=page.evaluate("""() => ({
+                      installed: !!window.__line_idb_probe_installed,
+                      records: JSON.parse(localStorage.getItem('__line_ci_idb_operations')||'[]')
+                    })""")
+                    print("LINE_IDB_OPERATION_TRACE "+json.dumps(trace,ensure_ascii=False),flush=True)
                 except Exception as diagnostic_error:
                     print("LINE_RESTORE_DIAGNOSTIC_UNAVAILABLE "+str(diagnostic_error),flush=True)
                 raise
