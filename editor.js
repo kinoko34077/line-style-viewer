@@ -13,6 +13,10 @@ let lastTap={id:null,at:0};
 // Keep repeated edits to large inline photos from multiplying memory without bound.
 function trimStack(stack){while(stack.length>1 && (stack.length>40 || stack.reduce((n,s)=>n+s.length,0)>32*1024*1024))stack.shift();}
 const snapshot=()=>JSON.stringify(doc);
+// Degrade safely in embedded editor-only test harnesses or when the optional
+// TXT parser has not loaded; normal app pages use script.js's classifier.
+const classifyEditorEntry=typeof classifyEntry==='function' ? classifyEntry :
+ (value,type)=>({entryKind:type==='attachment'?'media':'text',callKind:''});
 const allowedMedia=/^data:(?:image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/pdf|text\/plain|application\/zip|application\/octet-stream|audio\/(?:mpeg|ogg|wav));base64,/;
 function sanitize(input){
  if(!input || input.version!==1 || !Array.isArray(input.items)||!Array.isArray(input.participants))throw Error('プロジェクト形式が不正です');
@@ -35,14 +39,28 @@ function sanitize(input){
    while(seenIds.has(id))id=identifier();
    seenIds.add(id);
    const type=['text','attachment','date','system','call'].includes(it.type)?it.type:'text';
+   const content=String(it.content||'').slice(0,200000);
+   const semantic=classifyEditorEntry(content,type);
    const media=it.media&&allowedMedia.test(it.media.data||'')?{data:it.media.data,mime:String(it.media.mime||''),name:String(it.media.name||'ファイル').slice(0,180)}:null;
-   return {id,
+   const item={id,
     type,side:['me','you','system'].includes(it.side)?it.side:'you',
     speaker:String(it.speaker??it.name??'').slice(0,100),time:String(it.time||'').slice(0,50),
-    content:String(it.content||'').slice(0,200000),media,callKind:String(it.callKind||''),previousType:String(it.previousType||'text'),previousSpeaker:String(it.previousSpeaker||'').slice(0,100)};
+    content,media,entryKind:semantic.entryKind,callKind:semantic.callKind,previousType:String(it.previousType||'text'),previousSpeaker:String(it.previousSpeaker||'').slice(0,100)};
+   refreshEntrySemantics(item);
+   return item;
  });
  normalizeSpeakers(d);
  return d;
+}
+function refreshEntrySemantics(it){
+ if(it.type==='date')return;
+ const semantic=classifyEditorEntry(it.content,it.media?.data?'attachment':it.type);
+ it.entryKind=semantic.entryKind;it.callKind=semantic.callKind;
+ if(semantic.entryKind==='call')it.type='call';
+ else if(semantic.entryKind==='media')it.type='attachment';
+ else if(semantic.entryKind==='annotation')it.type='text';
+ else if(it.type==='call'||it.type==='attachment')it.type='text';
+ if(it.type==='system'&&it.entryKind!=='text')it.type='text';
 }
 function peerOf(d,preferred=''){
  const candidates=d.participants.filter(p=>p.name!==d.self);
@@ -159,10 +177,10 @@ function mediaKind(it){
    if(it.media.mime.startsWith('video/'))return 'video';
    return 'file';
  }
- if(it.type==='attachment'||/^\[(写真|動画|ファイル|.*\.(?:png|jpg|jpeg|webp|gif|mp4|pdf))\]$/i.test(it.content)){
-   if(/動画|\.mp4/i.test(it.content))return 'video';
-   if(/ファイル|\.pdf/i.test(it.content))return 'file';
-   return 'image';
+ if(it.type==='attachment'||/^\[(?:写真|動画|ファイル|[^\]\n]+\.(?:png|jpe?g|webp|gif|svg|mp4|webm|pdf|zip|txt|wav|mp3))\]$/i.test(it.content)){
+  if(/^\[動画\]$|\.(?:mp4|webm)\]$/i.test(it.content))return 'video';
+  if(/^\[ファイル\]$|\.(?:pdf|zip|txt|wav|mp3)\]$/i.test(it.content))return 'file';
+  return 'image';
  }
  return null;
 }
@@ -174,6 +192,28 @@ function fields(){
  if(gallery && gallery.closest('.menu-expand')?.classList.contains('expanded')){const missing=doc.items.filter(x=>mediaKind(x)&&!x.media?.data);
   gallery.innerHTML=missing.length?missing.map(x=>`<button type="button" class="gallery-tile" data-pick-media="${esc(x.id)}" aria-label="${esc(x.content)}の素材を選択"><img src="${missingAsset(mediaKind(x))}" alt=""><span>${esc(x.content)}</span></button>`).join(''):'<p>未指定の写真・動画・ファイルはありません。</p>';
  }
+}
+function specialView(it){
+ const raw=String(it.content||''),text=esc(raw);
+ if(it.entryKind==='call'){
+  const label=raw.trim().replace(/^☎\s*/,'').replace(/^\[|\]$/g,'').trim();
+  const duration=/^(?:(音声|ビデオ))?通話時間[\s:：]*([0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?)$/.exec(label);
+  const copy=duration?'<strong>'+(duration[1]==='ビデオ'?'ビデオ通話':'音声通話')+'</strong><small>'+esc(duration[2])+'</small>':'<strong>'+esc(label)+'</strong>';
+  return '<div class="editor-call-card" role="group" aria-label="'+text+'"><span class="editor-call-symbol" aria-hidden="true">☎</span><span class="editor-call-label">'+copy+'</span></div>';
+ }
+ if(it.entryKind==='media'){
+  const kind=mediaKind(it),id=esc(it.id),file=it.media;
+  let preview='';
+  if(file?.data){
+   const url=esc(file.data),name=esc(file.name);
+   if(kind==='image'||kind==='stamp')preview='<img class="editor-center-media" src="'+url+'" alt="'+name+'">';
+   else if(kind==='video')preview='<video class="editor-center-media" src="'+url+'" controls playsinline></video>';
+   else preview='<a href="'+url+'" download="'+name+'">▤ '+name+'</a>';
+  }else preview='<span aria-hidden="true">▧</span>';
+  return '<div class="editor-token-card">'+preview+'<span class="entry-token-caption" title="ダブルタップで括弧を編集">'+text+'</span>'+
+    '<button type="button" class="editor-token-picker" data-pick-media="'+id+'">素材を変更</button></div>';
+ }
+ return '<span class="editor-annotation-chip" role="note">'+text+'</span>';
 }
 function render(options={}){
  if(!transcript)return;
@@ -191,13 +231,15 @@ function render(options={}){
  let prev=null;const html=[];
  for(const it of doc.items){
   const id=esc(it.id),center=it.side==='system'||it.type==='system'||it.type==='date';
+  const special=it.entryKind&&it.entryKind!=='text'&&it.type!=='date';
   const grip='';
   const remove=`<button type="button" class="delete-entry" data-delete-id="${id}" aria-label="削除">×</button>`;
   const content=esc(it.content).replace(/\n/g,'<br>');
   const inline=`<span class="inline-body" contenteditable="false" role="textbox" aria-multiline="true" data-edit-body="${id}" aria-label="ダブルタップで編集">${it.type==='date'?esc(displayDateLabel(it.content)):content}</span>`;
   if(center){
    prev=null;
-   html.push(`<div class="editable-entry centered-entry${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="system"><div class="${it.type==='date'?'date-label':'system'} edit-system">${inline}${remove}</div>${it.type==='date'?'':`<input aria-label="時刻" class="inline-time" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1">`}</div>`);
+   const body=special?`<div class="entry-view">${specialView(it)}</div>${inline}`:inline;
+   html.push(`<div class="editable-entry centered-entry${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="system" data-entry-kind="${esc(it.entryKind||'text')}"><div class="${it.type==='date'?'date-label':special?'editor-special-center':'system'} edit-system">${body}${remove}</div>${it.type==='date'?'':`<input aria-label="時刻" class="inline-time" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1">`}</div>`);
    continue;
   }
   const mine=it.side==='me',m=/^\d{1,2}:\d{2}$/.test(it.time)?it.time:null;
@@ -213,7 +255,13 @@ function render(options={}){
     else balloon=`<div class="bound-file"><a href="${url}" download="${esc(it.media.name)}">▤ ${esc(it.media.name)}</a><button type="button" data-pick-media="${id}">変更</button></div>`;
    }else balloon=`<button type="button" class="unassigned-media unassigned-${kind}" data-pick-media="${id}" aria-label="${kind==='stamp'?'スタンプ':kind==='image'?'画像':kind==='video'?'動画':'ファイル'}を選択"><img src="${missingAsset(kind)}" alt="${kind==='stamp'?'未指定のスタンプ':'未指定の'+(kind==='image'?'画像':kind==='video'?'動画':'ファイル')}">${kind==='video'?'<span class="unassigned-video-play" aria-hidden="true">▶</span>':''}</button>`;
   }
-  html.push(`<div class="editable-entry talk ${mine?'me':'you'}${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="${it.side}"${grouped?' data-continuation="true"':''}>${icon}<div class="message-block-with-meta">${label}<div class="balloon${kind?' media-edit':''}">${balloon}${remove}</div><div class="meta-inline">${mine?'<span class="read">既読</span>':''}<input class="inline-time" aria-label="時刻" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1"></div></div></div>`);
+  if(special){
+   const view=it.entryKind==='media'
+     ?`<div class="entry-view">${balloon}<span class="entry-token-caption" title="ダブルタップで括弧を編集">${content}</span></div>`
+     :`<div class="entry-view">${specialView(it)}</div>`;
+   balloon=view+inline;
+  }
+  html.push(`<div class="editable-entry talk ${mine?'me':'you'}${selectedEntryId===it.id?' is-selected':''}" data-entry-id="${id}" data-side="${it.side}" data-entry-kind="${esc(it.entryKind||'text')}"${grouped?' data-continuation="true"':''}>${icon}<div class="message-block-with-meta">${label}<div class="balloon${kind?' media-edit':''}${special?' special-balloon':''}">${balloon}${remove}</div><div class="meta-inline">${mine?'<span class="read">既読</span>':''}<input class="inline-time" aria-label="時刻" data-edit-time="${id}" value="${esc(it.time)}" readonly tabindex="-1"></div></div></div>`);
   prev={speaker:it.speaker,side:it.side,minute:m};
  }
  transcript.innerHTML=html.length?html.join(''):'<div class="editor-empty">下の入力欄からトークを作成できます。<br>メッセージはダブルタップで編集、長押しで移動できます。<br><button type="button" id="emptyImportButton">LINE履歴（TXT/MD）を読み込む</button></div>';
@@ -222,6 +270,7 @@ function render(options={}){
 }
 function addItem(type,side,content,media){
  const it={id:identifier(),type,side,content,time:type==='date'?'':clock(),speaker:side==='me'?doc.self:side==='you'?peer():'',media:media||null,previousType:'text',previousSpeaker:'',callKind:''};
+ refreshEntrySemantics(it);
  mutate(d=>d.items.push(it),{bottom:true});
  return it;
 }
@@ -234,11 +283,12 @@ function send(){
  const input=E('composeInput');if(!input||!input.value.trim())return;
  const speaker=E('composeSpeaker')?.value||doc.self;
  const it={id:identifier(),type:'text',side:speaker===doc.self?'me':'you',speaker,time:clock(),content:input.value.replace(/\r\n/g,'\n'),media:null,previousType:'text',previousSpeaker:'',callKind:''};
+ refreshEntrySemantics(it);
  mutate(d=>d.items.push(it),{bottom:true});input.value='';input.focus();
 }
 function focusBody(id){
  const target=transcript.querySelector(`[data-edit-body="${id}"]`);
- if(target){target.contentEditable='true';target.setAttribute('tabindex','0');target.focus();}
+ if(target){const row=target.closest('.editable-entry');if(row?.dataset.entryKind!=='text')row?.classList.add('is-editing-entry');target.textContent=itemById(id)?.content??target.textContent;target.contentEditable='true';target.setAttribute('tabindex','0');target.focus();}
 }
 function exportJson(){
  const blob=new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
@@ -270,8 +320,8 @@ function importParsed(parsed,selfChoice,mode){
  if(!participants.some(p=>p.name===self))participants.unshift({name:self,avatar:''});
  if(participants.length===1)participants.push({name:'相手',avatar:''});
  const items=parsed.items.map(i=>({id:identifier(),type:i.type,content:i.content,
-  speaker:i.name||'',time:i.time||'',side:['system','date'].includes(i.type)?'system':i.name===self?'me':'you',
-  media:null,previousType:'text',callKind:i.callKind||''}));
+  speaker:i.name||'',time:i.time||'',side:i.side==='system'||['system','date'].includes(i.type)?'system':i.name===self?'me':'you',
+  media:null,previousType:'text',entryKind:i.entryKind||'',callKind:i.callKind||''}));
  mutate(d=>{doc=sanitize({version:1,title:parsed.meta.title||'トーク',self,mode,
   scale:d.scale,theme:d.theme,participants,items});history.length=0;future.length=0;});
  status('TXT履歴を編集用に読み込みました。原本は変更しません');
@@ -400,7 +450,12 @@ function flush(el,withoutRender=false){
      v=`${oldYear}/${String(Number(short[1])).padStart(2,'0')}/${String(Number(short[2])).padStart(2,'0')}${short[3]||''}`;
    }
  }
- if(it&&it[field]!==v)mutate(d=>{const x=d.items.find(i=>i.id===id);if(x)x[field]=v;},{noRender:withoutRender});
+ if(it&&it[field]!==v)mutate(d=>{const x=d.items.find(i=>i.id===id);if(x){x[field]=v;if(field==='content'){
+   // Explicit content edit changes semantics; a legacy call type is only
+   // authoritative until the user replaces its wording.
+   if(x.type==='call')x.type='text';
+   refreshEntrySemantics(x);
+  }}},{noRender:withoutRender});
 }
 transcript.addEventListener('focusin',e=>{if(editorNode(e.target))focusStart.set(e.target,readEdit(e.target));});
 transcript.addEventListener('focusout',e=>{
@@ -411,6 +466,7 @@ transcript.addEventListener('focusout',e=>{
    if(el.isConnected && el.hasAttribute('data-edit-body')){
      const item=itemById(el.dataset.editBody);
      if(item?.type==='date')el.textContent=displayDateLabel(item.content);
+     el.closest('.editable-entry')?.classList.remove('is-editing-entry');
      el.contentEditable='false';el.removeAttribute('tabindex');
    }else if(el.isConnected && el.hasAttribute('data-edit-time')){
      el.readOnly=true;el.tabIndex=-1;
@@ -451,7 +507,8 @@ function enableInline(target,row){
    const item=itemById(row.dataset.entryId);
    // Show the canonical full year only while editing. Double-tapping and
    // blurring an unchanged current-year date must never strip its year.
-   if(item?.type==='date')node.textContent=item.content;
+   if(item?.type==='date'||(item?.entryKind&&item.entryKind!=='text'))node.textContent=item.content;
+   if(item?.entryKind&&item.entryKind!=='text')row.classList.add('is-editing-entry');
    node.contentEditable='true';
    node.tabIndex=0;
  }else{
@@ -585,7 +642,7 @@ transcript.addEventListener('pointerup',e=>{
   const old=d.items.findIndex(x=>x.id===id);if(old<0)return;
   const [it]=d.items.splice(old,1);
   if(zone==='system'){
-   if(it.type!=='date'&&it.type!=='system'){it.previousType=it.type;it.type='system';}
+   if(it.entryKind==='text'&&it.type!=='date'&&it.type!=='system'){it.previousType=it.type;it.type='system';}
    if(it.speaker&&it.speaker!==d.self)it.previousSpeaker=it.speaker;
     it.side='system';it.speaker='';
   }else{

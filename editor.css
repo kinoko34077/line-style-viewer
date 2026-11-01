@@ -493,3 +493,76 @@ html[data-theme="black"] .menu-action { background: #394047; color: #f7f8fa; }
   overflow-wrap: anywhere;
 }
 .editor-error-toast[hidden] { display: none; }
+
+/* #69: semantic call/bracket records are not ordinary text bubbles.
+   Identity remains independent of left/center/right placement. */
+.editable-entry[data-entry-kind="call"] .balloon.special-balloon,
+.editable-entry[data-entry-kind="annotation"] .balloon.special-balloon,
+.editable-entry[data-entry-kind="media"] .balloon.special-balloon {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+  overflow: visible;
+}
+.editor-call-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 152px;
+  max-width: min(260px, 76vw);
+  padding: 11px 13px;
+  border-radius: 12px;
+  color: var(--shell-ink, #252b32);
+  background: #f4f6f9;
+  border: 1px solid #dce2e9;
+}
+.editor-call-symbol { font-size: 21px; color: #527aa4; line-height: 1; }
+.editor-call-label { display:flex; flex-direction:column; gap:3px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+.editor-call-label small { font-size:12px; color:#627181; }
+.editor-annotation-chip {
+  display: inline-block;
+  max-width: min(260px, 76vw);
+  border: 1px solid #cbd6e4;
+  border-radius: 14px;
+  background: #eef3fa;
+  padding: 7px 12px;
+  color: #40536b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.editor-special-center { max-width: min(280px, 80vw); position:relative; }
+.editor-token-card { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:12px; border:1px solid #cad3de; background:#f3f6fa; font-size:12px; overflow-wrap:anywhere; }
+.entry-token-caption { display:block; padding:4px 6px; font-size:11px; text-align:center; color:var(--metadata-color, #6d7785); cursor:text; overflow-wrap:anywhere; }
+.editable-entry[data-entry-kind="call"] .inline-body,
+.editable-entry[data-entry-kind="annotation"] .inline-body,
+.editable-entry[data-entry-kind="media"] .inline-body { display:none; }
+.editable-entry.is-editing-entry .entry-view { display:none; }
+.editable-entry.is-editing-entry .inline-body {
+  display:block;
+  padding:8px 10px;
+  min-width: 110px;
+  max-width:min(280px, 80vw);
+  border-radius:8px;
+  background:#fff;
+  color:#222;
+  box-shadow:inset 0 0 0 2px #3582bd;
+  white-space:pre-wrap;
+}
+
+/* Read-only TXT preview uses the same bracket-notice distinction. */
+.bracket-notice {
+  display:inline-block;
+  border-radius:14px;
+  border:1px solid #cbd6e4;
+  background:#eef3fa;
+  color:#40536b;
+  padding:7px 12px;
+  font-size:12px;
+  overflow-wrap:anywhere;
+}
+
+.editor-token-card .editor-center-media {display:block; max-width:min(200px,65vw); max-height:240px; object-fit:contain; border-radius:7px;}
+.editor-token-card .editor-token-picker {border:0; background:transparent; text-decoration:underline; padding:3px; color:#436a93; font-size:11px; cursor:pointer;}
+.editor-token-card:has(.editor-center-media) {flex-direction:column; align-items:center;}

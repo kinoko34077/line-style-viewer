@@ -573,7 +573,7 @@ test('uploaded test export: unquoted continuation stays in original 18:32 A bubb
     {type:'date',content:'2017/04/24(月)'},
     {type:'text',name:'A',time:'18:32',content:'ほんと\n試してみる'},
     {type:'text',name:'B',time:'18:33',content:'どの順番で進めるか決めよう。'},
-    {type:'attachment',name:'A',time:'18:33',content:'[スタンプ]'}
+    {type:'attachment',name:'A',time:'18:33',content:'[スタンプ]',entryKind:'media'}
   ]);
   parsed.meta.user='A';
   parser.renderChat(parsed);
