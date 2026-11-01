@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Proof of offline LINE chat creation, editing, media, drag and browser cache."""
-import base64,json,threading,atexit
+import base64,json,threading,atexit,time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -239,7 +239,8 @@ def main():
             assert final_touch["side"]=="me" and final_touch["speaker"]=="制作主",final_touch
             # A status string can describe an older save. Wait for the actual
             # latest peer side in IndexedDB before reloading the tab.
-            page.wait_for_function("""async id => {
+            def exact_save_ready():
+                return page.evaluate("""async id => {
               const db=await new Promise((ok,fail)=>{
                 const q=indexedDB.open('line-style-editor-cache',1);
                 q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
@@ -258,7 +259,17 @@ def main():
                 return copies.every(raw=>raw===expected &&
                   JSON.parse(raw??'{}').items?.find(i=>i.id===id)?.side==='me');
               }finally{db.close();}
-            }""",arg=peerId,timeout=20000)
+            }""",peerId)
+            # page.wait_for_function() can treat an asynchronous predicate as
+            # truthy before its IndexedDB transaction resolves. Poll from
+            # Python, awaiting every page.evaluate() promise explicitly.
+            # The condition requires BOTH CAS copies to equal the live project.
+            deadline=time.monotonic()+20.0
+            while not exact_save_ready():
+                if time.monotonic()>=deadline:
+                    raise AssertionError("Latest editor document did not reach both IndexedDB copies before reload")
+                page.wait_for_timeout(125)
+            print("LINE_EXACT_SAVE_GATE_AWAITED_PASS",flush=True)
             # Track the first instant where the last saved side diverges.
             # Values are synthetic-side labels and byte lengths only.
             def save_checkpoint(label):
