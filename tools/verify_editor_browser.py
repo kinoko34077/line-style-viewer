@@ -282,6 +282,34 @@ def main():
               databaseNames:(await indexedDB.databases()).map(d=>d.name),
               hasLocalBackup:!!localStorage.getItem('line-style-editor-cache-backup')
             })"""),ensure_ascii=False),flush=True)
+            # Independent same-origin, no-app observer: distinguish browser
+            # storage-wide loss from app/main-document restore failure.
+            observer=context.new_page()
+            observer.goto(url.replace("/index.html","/__ci_no_script_probe__.html"),
+                          wait_until="domcontentloaded")
+            def observer_storage():
+                return observer.evaluate("""async () => {
+                  const q=indexedDB.open('line-style-editor-cache',1);
+                  const db=await new Promise((ok,fail)=>{
+                    q.onsuccess=()=>ok(q.result);q.onerror=()=>fail(q.error);
+                  });
+                  try{
+                    return await new Promise((ok,fail)=>{
+                      const tx=db.transaction('document','readonly'),s=tx.objectStore('document');
+                      const keys=s.getAllKeys(),active=s.get('active'),
+                        protectedCopy=s.get('active-protected'),rev=s.get('active-revision');
+                      tx.oncomplete=()=>ok({
+                        keys:keys.result.map(String).sort(),
+                        activeBytes:typeof active.result==='string'?active.result.length:null,
+                        protectedBytes:typeof protectedCopy.result==='string'?protectedCopy.result.length:null,
+                        hasRevision:!!rev.result,
+                        dbVersion:db.version
+                      });
+                      tx.onabort=()=>fail(tx.error);
+                    });
+                  }finally{db.close();}
+                }""")
+            print("LINE_OBSERVER_PRE_RELOAD "+json.dumps(observer_storage()),flush=True)
             # CI-only write trace: distinguish app-initiated deletion/overwrite
             # from browser-origin storage disappearance. Never log chat bodies.
             probe = """() => {
@@ -382,6 +410,7 @@ def main():
                       records: JSON.parse(localStorage.getItem('__line_ci_idb_operations')||'[]')
                     })""")
                     print("LINE_IDB_OPERATION_TRACE "+json.dumps(trace,ensure_ascii=False),flush=True)
+                    print("LINE_OBSERVER_POST_RELOAD "+json.dumps(observer_storage()),flush=True)
                 except Exception as diagnostic_error:
                     print("LINE_RESTORE_DIAGNOSTIC_UNAVAILABLE "+str(diagnostic_error),flush=True)
                 raise
