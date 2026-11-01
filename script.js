@@ -264,14 +264,35 @@ function normalizeQuotedBody(content) {
 
 function getCallKind(value) {
   // iOS text exports often prefix call records with the symbol "☎".
-  const text = value.trim().replace(/^☎\s*/, '');
-  if (/^\[?不在着信(?:[（(](?:音声|ビデオ)通話[）)])?\]?$/.test(text)) return 'missed';
+  const raw = String(value ?? '').trim().replace(/^☎\s*/, '');
+  // Full [brackets] are a transport marker, not part of a call subtype.
+  const text = /^\[[^\]\n]+\]$/.test(raw) ? raw.slice(1,-1).trim() : raw;
+  if (/^不在着信(?:[（(](?:音声|ビデオ)通話[）)])?$/.test(text)) return 'missed';
   if (/^(?:応答なし|応答がありません|着信なし|通話に応答がありませんでした)[。]?$/.test(text)) return 'unanswered';
   if (/^(?:キャンセル|通話をキャンセルしました)[。]?$/.test(text)) return 'cancelled';
   if (/^(?:(?:音声|ビデオ)?通話時間)[\s:：]*\d{1,2}:\d{2}(?::\d{2})?$/.test(text)) return 'duration';
   if (/^(?:音声|ビデオ)通話$/.test(text)) return 'duration';
   if (/^(?:(?:音声|ビデオ)?通話)(?:を開始しました|を終了しました|が終了しました)[。]?$/.test(text)) return 'duration';
   return null;
+}
+
+function isBracketRecord(value) {
+  return /^\[[^\]\n]+\]$/.test(String(value??'').trim());
+}
+function classifyEntry(value, type='text') {
+  const text=String(value??'').trim();
+  const callKind=getCallKind(text);
+  if(callKind)return {entryKind:'call',callKind};
+  // Legacy JSON/TXT can carry an explicit call type with provider-specific
+  // wording not recognized by the current exact-text detector. Preserve it.
+  if(type==='call')return {entryKind:'call',callKind:''};
+  if(isBracketRecord(text)){
+    const media=/^\[(?:写真|動画|ファイル|スタンプ)\]$/.test(text) ||
+      /^\[(?:stk|stamp|sticker)[_-][^\]]+\.(?:svg|png|gif|webp|jpe?g)\]$/i.test(text) ||
+      /^\[[^\]\n]+\.(?:png|jpe?g|gif|svg|webp|mp4|webm|pdf|txt|zip|wav|mp3)\]$/i.test(text);
+    return {entryKind:media?'media':'annotation',callKind:''};
+  }
+  return {entryKind:type==='attachment'?'media':'text',callKind:''};
 }
 
 function isSystemNotice(value, senderName) {
@@ -320,7 +341,10 @@ function parseText(text) {
             type: isSystem ? 'system' : ['text','attachment','call'].includes(data.kind) ? data.kind : 'text',
             name: isSystem ? '' : speaker,
             time: typeof data.time === 'string' ? data.time : '',
-            content: data.content
+            content: data.content,
+            ...(data.side==='system' && !isSystem ? {side:'system'} : {}),
+            ...(typeof data.callKind==='string' ? {callKind:data.callKind} : {}),
+            ...(typeof data.entryKind==='string' ? {entryKind:data.entryKind} : {})
           });
           previousSpeaker = null;
         }
@@ -352,18 +376,21 @@ function parseText(text) {
       const name = fields.length >= 3 ? fields[1] : '';
       const rawContent = fields.length >= 3 ? fields.slice(2).join('\t') : fields[1];
       const content = normalizeQuotedBody(rawContent);
-      const callKind = getCallKind(content);
+      const semantic = classifyEntry(content);
+      const callKind = semantic.callKind;
       // Content semantics take precedence over absent sender metadata.
       // A nameless text/file row must not become a centered system pill.
       const type = isSystemNotice(content, name)
         ? 'system'
-        : callKind ? 'call'
-          : /^\[.*\]$/.test(content) ? 'attachment' : 'text';
+        : semantic.entryKind==='call' ? 'call'
+          : semantic.entryKind==='media' ? 'attachment' : 'text';
       const isOrdinary = type === 'text' || type === 'attachment';
       const effectiveName = isOrdinary && !name.trim() && previousSpeaker
         ? previousSpeaker : name;
       currentSection.push({
-        type, name: effectiveName, time, content, ...(callKind ? {callKind} : {})
+        type, name: effectiveName, time, content,
+        ...(semantic.entryKind!=='text' ? {entryKind:semantic.entryKind} : {}),
+        ...(callKind ? {callKind} : {})
       });
       // Notifications and call records break a consecutive message run.
       // A leading unknown sender stays unknown instead of being guessed.
@@ -491,18 +518,24 @@ function renderChat({ meta, items }) {
       const icon = meta.icons[item.name] || meta.icons['default'] || './default/default-icon.png';
       const safeIcon = escapeHtml(icon);
       const safeTime = escapeHtml(item.time);
-      const ordinary = item.type === 'text' || item.type === 'attachment';
+      const ordinary = (item.type === 'text' || item.type === 'attachment') &&
+        item.entryKind !== 'annotation';
       const minute = minuteKey(item.time);
       const grouped = Boolean(ordinary && item.name && minute && previousVisual &&
         previousVisual.name === item.name && previousVisual.minute === minute);
       let contentHTML = '';
 
-      if (/^\[.*\.(jpg|png|svg|mp4|webm)\]$/.test(item.content)) {
-        const filename = item.content.replace(/[\[\]]/g, '');
+      // Only trusted relative asset names may become browser src attributes.
+      // A [https://host/file.png] marker must never trigger a network request.
+      const sourceName=/^\[([^\]\n]+\.(?:jpg|jpeg|png|svg|mp4|webm))\]$/i.exec(item.content)?.[1];
+      const localName=sourceName&&!sourceName.startsWith('/')&&
+        sourceName.split('/').every(part=>part&&part!=='.'&&part!=='..'&&!/[\\:?&#%]/.test(part));
+      if (localName) {
+        const filename = sourceName;
         const safeFilename = escapeHtml(filename);
-        if (/\.(jpg|png|svg)$/.test(filename)) {
+        if (/\.(jpe?g|png|svg)$/i.test(filename)) {
           contentHTML = `<img src="${safeFilename}" onerror="this.src='./default/default-photo.png'">`;
-        } else if (/\.(mp4|webm)$/.test(filename)) {
+        } else if (/\.(mp4|webm)$/i.test(filename)) {
           contentHTML = `<video src="${safeFilename}" controls></video>`;
         }
       } else if (item.content === '[写真]' || item.content === '[動画]') {
@@ -515,6 +548,9 @@ function renderChat({ meta, items }) {
         contentHTML = '<div class="file-card" role="group" aria-label="ファイル（詳細不明）"><span class="file-card-icon" aria-hidden="true">▤</span><span class="file-card-label">ファイル</span></div>';
       } else if (item.content === '[スタンプ]') {
         contentHTML = '<img class="stamp-fallback" src="./default/default-stamp.png" alt="スタンプ（画像データなし）">';
+      } else if (item.entryKind === 'annotation') {
+        // Complete [...] markers are event/annotation records, not chat prose.
+        contentHTML = `<div class="bracket-notice" role="note">${escapeHtml(item.content)}</div>`;
       } else if (item.type === 'call') {
         const callText = item.content.replace(/^☎\s*/, '').replace(/^\[|\]$/g, '');
         const durationMatch = /^(?:(音声|ビデオ))?通話時間\s*([0-9:]+)$/.exec(callText.trim());
